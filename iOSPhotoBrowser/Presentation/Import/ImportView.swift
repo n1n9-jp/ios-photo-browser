@@ -63,11 +63,38 @@ struct ImportView: View {
                     dismiss()
                 }
             }
+            .fullScreenCover(isPresented: $viewModel.showingCamera) {
+                CameraPicker(isPresented: $viewModel.showingCamera) { capturedImage in
+                    Task {
+                        await viewModel.importFromCamera(capturedImage)
+                    }
+                }
+                .ignoresSafeArea()
+            }
         }
     }
 
     private var importOptionsView: some View {
         VStack(spacing: 20) {
+            // カメラボタン（カメラが利用可能な場合のみ表示）
+            if CameraPicker.isAvailable {
+                Button {
+                    viewModel.showingCamera = true
+                } label: {
+                    HStack {
+                        Image(systemName: "camera")
+                            .font(.title2)
+                        Text("カメラで撮影")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.green)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+            }
+
             PhotosPicker(
                 selection: $selectedItems,
                 maxSelectionCount: 100,
@@ -104,7 +131,7 @@ struct ImportView: View {
 
             Spacer()
 
-            Text("写真やファイルアプリから画像を取り込めます")
+            Text("カメラ、写真、ファイルアプリから画像を取り込めます")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }

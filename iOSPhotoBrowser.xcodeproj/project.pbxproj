@@ -400,6 +400,7 @@
 				DEVELOPMENT_TEAM = 86TJC8MC2Z;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "カメラで写真を撮影して取り込むために必要です";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "写真を取り込むためにアクセスが必要です";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -433,6 +434,7 @@
 				DEVELOPMENT_TEAM = 86TJC8MC2Z;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "カメラで写真を撮影して取り込むために必要です";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "写真を取り込むためにアクセスが必要です";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

@@ -165,6 +165,8 @@ final class ImageRepository: ImageRepositoryProtocol {
                 publishedDate: bookInfoEntity.publishedDate,
                 coverUrl: bookInfoEntity.coverUrl,
                 category: bookInfoEntity.category,
+                readingStatus: ReadingStatus(rawValue: bookInfoEntity.readingStatus) ?? .unread,
+                ownershipStatus: OwnershipStatus(rawValue: bookInfoEntity.ownershipStatus) ?? .notOwned,
                 createdAt: bookInfoEntity.createdAt ?? Date(),
                 updatedAt: bookInfoEntity.updatedAt ?? Date()
             )

@@ -18,6 +18,7 @@ final class ImportViewModel: ObservableObject {
     @Published private(set) var shouldDismiss = false
     @Published var showingPhotoPicker = false
     @Published var showingFilePicker = false
+    @Published var showingCamera = false
     @Published var error: Error?
     @Published var showingError = false
 
@@ -135,6 +136,40 @@ final class ImportViewModel: ObservableObject {
             }
 
             importProgress = Double(index + 1) / Double(total)
+        }
+
+        isImporting = false
+
+        // Auto-dismiss after short delay if import succeeded
+        if importedCount > 0 {
+            try? await Task.sleep(for: .milliseconds(800))
+            shouldDismiss = true
+        }
+    }
+
+    func importFromCamera(_ image: UIImage) async {
+        isImporting = true
+        importProgress = 0
+        importedCount = 0
+        failedCount = 0
+
+        do {
+            guard let data = image.jpegData(compressionQuality: 0.9) else {
+                failedCount = 1
+                isImporting = false
+                return
+            }
+
+            let fileName = "camera_\(UUID().uuidString).jpg"
+            _ = try await importImageUseCase.execute(
+                imageData: data,
+                originalFileName: fileName
+            )
+            importedCount = 1
+            importProgress = 1.0
+        } catch {
+            failedCount = 1
+            print("Import error: \(error)")
         }
 
         isImporting = false

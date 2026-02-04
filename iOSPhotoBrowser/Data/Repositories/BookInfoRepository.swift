@@ -34,6 +34,8 @@ final class BookInfoRepository: BookInfoRepositoryProtocol {
             entity.publishedDate = bookInfo.publishedDate
             entity.coverUrl = bookInfo.coverUrl
             entity.category = bookInfo.category
+            entity.readingStatus = bookInfo.readingStatus.rawValue
+            entity.ownershipStatus = bookInfo.ownershipStatus.rawValue
             entity.createdAt = bookInfo.createdAt
             entity.updatedAt = bookInfo.updatedAt
 
@@ -76,6 +78,8 @@ final class BookInfoRepository: BookInfoRepositoryProtocol {
             entity.publishedDate = bookInfo.publishedDate
             entity.coverUrl = bookInfo.coverUrl
             entity.category = bookInfo.category
+            entity.readingStatus = bookInfo.readingStatus.rawValue
+            entity.ownershipStatus = bookInfo.ownershipStatus.rawValue
             entity.updatedAt = Date()
 
             try self.context.save()
@@ -110,6 +114,8 @@ final class BookInfoRepository: BookInfoRepositoryProtocol {
             publishedDate: entity.publishedDate,
             coverUrl: entity.coverUrl,
             category: entity.category,
+            readingStatus: ReadingStatus(rawValue: entity.readingStatus) ?? .unread,
+            ownershipStatus: OwnershipStatus(rawValue: entity.ownershipStatus) ?? .notOwned,
             createdAt: entity.createdAt ?? Date(),
             updatedAt: entity.updatedAt ?? Date()
         )
