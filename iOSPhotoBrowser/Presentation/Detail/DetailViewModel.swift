@@ -163,8 +163,8 @@ final class DetailViewModel: ObservableObject {
         defer { isProcessingOCR = false }
 
         do {
-            // Step 1: OCR
-            let extractedText = try await ocrService.recognizeText(from: image)
+            // Step 1: OCR（Apple Intelligence補正が利用可能なら自動適用）
+            let extractedText = try await ocrService.recognizeTextWithCorrection(from: image)
 
             // Save extracted text
             try await imageRepository.updateExtractedText(
