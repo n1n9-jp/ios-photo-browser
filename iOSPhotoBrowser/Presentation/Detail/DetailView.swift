@@ -238,6 +238,22 @@ struct DetailView: View {
                 }
             } else if let bookInfo = photo.bookInfo {
                 VStack(alignment: .leading, spacing: 8) {
+                    // User status badges
+                    HStack(spacing: 12) {
+                        statusBadge(
+                            icon: bookInfo.readingStatus.iconName,
+                            text: bookInfo.readingStatus.displayName,
+                            color: readingStatusColor(bookInfo.readingStatus)
+                        )
+                        statusBadge(
+                            icon: bookInfo.ownershipStatus.iconName,
+                            text: bookInfo.ownershipStatus.displayName,
+                            color: bookInfo.ownershipStatus == .owned ? .green : .gray
+                        )
+                    }
+
+                    Divider()
+
                     if let title = bookInfo.title {
                         bookInfoRow("タイトル", value: title)
                     }
@@ -298,6 +314,28 @@ struct DetailView: View {
         .padding()
         .background(Color.gray.opacity(0.1))
         .cornerRadius(12)
+    }
+
+    private func statusBadge(icon: String, text: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+            Text(text)
+                .font(.system(size: 12))
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.1))
+        .cornerRadius(6)
+    }
+
+    private func readingStatusColor(_ status: ReadingStatus) -> Color {
+        switch status {
+        case .unread: return .gray
+        case .reading: return .blue
+        case .finished: return .green
+        }
     }
 
     private func bookInfoRow(_ label: String, value: String) -> some View {
@@ -440,6 +478,22 @@ struct DetailView: View {
         NavigationStack {
             Form {
                 if let binding = Binding($viewModel.editingBookInfo) {
+                    Section("ユーザー情報") {
+                        Picker("読書状況", selection: binding.readingStatus) {
+                            ForEach(ReadingStatus.allCases, id: \.self) { status in
+                                Label(status.displayName, systemImage: status.iconName)
+                                    .tag(status)
+                            }
+                        }
+
+                        Picker("所有状況", selection: binding.ownershipStatus) {
+                            ForEach(OwnershipStatus.allCases, id: \.self) { status in
+                                Label(status.displayName, systemImage: status.iconName)
+                                    .tag(status)
+                            }
+                        }
+                    }
+
                     Section("書誌情報") {
                         TextField("タイトル", text: Binding(
                             get: { binding.wrappedValue.title ?? "" },
@@ -483,7 +537,7 @@ struct DetailView: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 
     private var titleSearchSheet: some View {

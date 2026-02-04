@@ -96,7 +96,10 @@ final class DependencyContainer {
     }
 
     func makeExtractedTextsViewModel() -> ExtractedTextsViewModel {
-        ExtractedTextsViewModel(imageRepository: imageRepository)
+        ExtractedTextsViewModel(
+            imageRepository: imageRepository,
+            bookInfoRepository: bookInfoRepository
+        )
     }
 
     private init() {}

@@ -8,6 +8,7 @@ import SwiftUI
 struct ExtractedTextsView: View {
     @StateObject private var viewModel = DependencyContainer.shared.makeExtractedTextsViewModel()
     @State private var selectedItem: ExtractedTextItem?
+    @State private var showingFilterSheet = false
 
     var body: some View {
         NavigationStack {
@@ -21,6 +22,15 @@ struct ExtractedTextsView: View {
                 }
             }
             .navigationTitle("書誌情報")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingFilterSheet = true
+                    } label: {
+                        Image(systemName: viewModel.hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    }
+                }
+            }
             .task {
                 await viewModel.loadItems()
             }
@@ -33,9 +43,70 @@ struct ExtractedTextsView: View {
                 Text(viewModel.error?.localizedDescription ?? "不明なエラー")
             }
             .sheet(item: $selectedItem) { item in
-                bookDetailSheet(item: item)
+                BookDetailSheetView(
+                    item: item,
+                    onStatusUpdate: { readingStatus, ownershipStatus in
+                        Task {
+                            await viewModel.updateStatus(
+                                for: item.id,
+                                readingStatus: readingStatus,
+                                ownershipStatus: ownershipStatus
+                            )
+                        }
+                    },
+                    onDismiss: {
+                        selectedItem = nil
+                    }
+                )
+            }
+            .sheet(isPresented: $showingFilterSheet) {
+                filterSheet
             }
         }
+    }
+
+    // MARK: - Filter Sheet
+
+    private var filterSheet: some View {
+        NavigationStack {
+            Form {
+                Section("読書状況") {
+                    Picker("読書状況", selection: $viewModel.readingStatusFilter) {
+                        ForEach(ReadingStatusFilter.allCases, id: \.self) { filter in
+                            Text(filter.displayName).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("所有状況") {
+                    Picker("所有状況", selection: $viewModel.ownershipStatusFilter) {
+                        ForEach(OwnershipStatusFilter.allCases, id: \.self) { filter in
+                            Text(filter.displayName).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                if viewModel.hasActiveFilters {
+                    Section {
+                        Button("フィルターをクリア", role: .destructive) {
+                            viewModel.clearFilters()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("フィルター")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完了") {
+                        showingFilterSheet = false
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     private var emptyStateView: some View {
@@ -43,12 +114,24 @@ struct ExtractedTextsView: View {
             Image(systemName: "book.closed")
                 .font(.system(size: 60))
                 .foregroundColor(.secondary)
-            Text("書誌情報がありません")
-                .font(.headline)
-            Text("詳細画面で「抽出」ボタンを押すと\nOCRでテキストを抽出し、\n書誌情報を取得できます")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            if viewModel.hasActiveFilters {
+                Text("該当する書誌情報がありません")
+                    .font(.headline)
+                Text("フィルター条件を変更してみてください")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Button("フィルターをクリア") {
+                    viewModel.clearFilters()
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Text("書誌情報がありません")
+                    .font(.headline)
+                Text("詳細画面で「抽出」ボタンを押すと\nOCRでテキストを抽出し、\n書誌情報を取得できます")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding()
     }
@@ -75,6 +158,20 @@ struct ExtractedTextsView: View {
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                             .lineLimit(1)
+                                    }
+
+                                    // Status badges
+                                    HStack(spacing: 8) {
+                                        statusBadge(
+                                            icon: item.readingStatus.iconName,
+                                            text: item.readingStatus.displayName,
+                                            color: readingStatusColor(item.readingStatus)
+                                        )
+                                        statusBadge(
+                                            icon: item.ownershipStatus.iconName,
+                                            text: item.ownershipStatus.displayName,
+                                            color: item.ownershipStatus == .owned ? .green : .gray
+                                        )
                                     }
                                 }
 
@@ -103,7 +200,53 @@ struct ExtractedTextsView: View {
         .listStyle(.insetGrouped)
     }
 
-    private func bookDetailSheet(item: ExtractedTextItem) -> some View {
+    private func statusBadge(icon: String, text: String, color: Color) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text(text)
+                .font(.system(size: 10))
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.1))
+        .cornerRadius(4)
+    }
+
+    private func readingStatusColor(_ status: ReadingStatus) -> Color {
+        switch status {
+        case .unread: return .gray
+        case .reading: return .blue
+        case .finished: return .green
+        }
+    }
+}
+
+// MARK: - Book Detail Sheet View
+
+struct BookDetailSheetView: View {
+    let item: ExtractedTextItem
+    let onStatusUpdate: (ReadingStatus, OwnershipStatus) -> Void
+    let onDismiss: () -> Void
+
+    @State private var readingStatus: ReadingStatus
+    @State private var ownershipStatus: OwnershipStatus
+    @State private var hasChanges = false
+
+    init(
+        item: ExtractedTextItem,
+        onStatusUpdate: @escaping (ReadingStatus, OwnershipStatus) -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.item = item
+        self.onStatusUpdate = onStatusUpdate
+        self.onDismiss = onDismiss
+        _readingStatus = State(initialValue: item.readingStatus)
+        _ownershipStatus = State(initialValue: item.ownershipStatus)
+    }
+
+    var body: some View {
         NavigationStack {
             List {
                 // Thumbnail section
@@ -121,6 +264,29 @@ struct ExtractedTextsView: View {
                         }
                     }
                     .listRowBackground(Color.clear)
+                }
+
+                // User status section (editable)
+                Section("ユーザー情報") {
+                    Picker("読書状況", selection: $readingStatus) {
+                        ForEach(ReadingStatus.allCases, id: \.self) { status in
+                            Label(status.displayName, systemImage: status.iconName)
+                                .tag(status)
+                        }
+                    }
+                    .onChange(of: readingStatus) { _, _ in
+                        hasChanges = true
+                    }
+
+                    Picker("所有状況", selection: $ownershipStatus) {
+                        ForEach(OwnershipStatus.allCases, id: \.self) { status in
+                            Label(status.displayName, systemImage: status.iconName)
+                                .tag(status)
+                        }
+                    }
+                    .onChange(of: ownershipStatus) { _, _ in
+                        hasChanges = true
+                    }
                 }
 
                 // Book info section
@@ -161,8 +327,11 @@ struct ExtractedTextsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("閉じる") {
-                        selectedItem = nil
+                    Button(hasChanges ? "保存" : "閉じる") {
+                        if hasChanges {
+                            onStatusUpdate(readingStatus, ownershipStatus)
+                        }
+                        onDismiss()
                     }
                 }
             }
