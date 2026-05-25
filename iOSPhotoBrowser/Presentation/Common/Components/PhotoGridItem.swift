@@ -27,6 +27,17 @@ struct PhotoGridItem: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .cornerRadius(8)
+        .overlay(alignment: .bottomTrailing) {
+            if photo.isGIF {
+                Text("GIF")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(.black.opacity(0.7), in: Capsule())
+                    .foregroundColor(.white)
+                    .padding(6)
+            }
+        }
         .task {
             loadThumbnail()
         }

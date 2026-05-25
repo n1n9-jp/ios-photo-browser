@@ -176,7 +176,10 @@ final class ImportViewModel: ObservableObject {
         for (index, item) in items.enumerated() {
             do {
                 if let data = try await item.loadTransferable(type: Data.self) {
-                    let fileName = "image_\(UUID().uuidString).jpg"
+                    let fileExtension = item.supportedContentTypes
+                        .compactMap(\.preferredFilenameExtension)
+                        .first ?? "jpg"
+                    let fileName = "image_\(UUID().uuidString).\(fileExtension)"
                     _ = try await importImageUseCase.execute(
                         imageData: data,
                         originalFileName: fileName

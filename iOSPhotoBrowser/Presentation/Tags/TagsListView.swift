@@ -105,7 +105,10 @@ struct TagImagesView: View {
                     .padding(4)
                 }
                 .navigationDestination(for: PhotoItem.self) { photo in
-                    DetailView(photoId: photo.id)
+                    LibraryPhotoBrowserView(
+                        photos: photos,
+                        initialPhotoId: photo.id
+                    )
                 }
             }
         }

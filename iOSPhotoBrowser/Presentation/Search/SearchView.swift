@@ -89,7 +89,10 @@ struct SearchView: View {
             }
         }
         .navigationDestination(for: PhotoItem.self) { photo in
-            DetailView(photoId: photo.id)
+            LibraryPhotoBrowserView(
+                photos: viewModel.searchResults,
+                initialPhotoId: photo.id
+            )
         }
     }
 }

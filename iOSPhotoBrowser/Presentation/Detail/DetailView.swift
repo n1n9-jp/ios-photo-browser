@@ -9,51 +9,38 @@ struct DetailView: View {
     @StateObject private var viewModel: DetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var image: UIImage?
+    @State private var imageData: Data?
+    @State private var showsMetadataOverlay = false
 
     init(photoId: UUID) {
         _viewModel = StateObject(wrappedValue: DependencyContainer.shared.makeDetailViewModel(photoId: photoId))
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // Image
-                if let image = image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity)
-                        .cornerRadius(12)
-                } else {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .aspectRatio(1, contentMode: .fit)
-                        .overlay {
-                            ProgressView()
-                        }
-                        .cornerRadius(12)
-                }
+        ZStack {
+            Color.black.ignoresSafeArea()
 
-                if let photo = viewModel.photo {
-                    // Book Info Section
-                    bookInfoSection(photo: photo)
-
-                    // Tags Section
-                    tagsSection(photo: photo)
-
-                    // Albums Section
-                    albumsSection(photo: photo)
-
-                    // Metadata Section
-                    metadataSection(photo: photo)
-                }
+            if let photo = viewModel.photo {
+                detailCanvas(photo: photo)
+            } else {
+                placeholderMedia
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea(edges: .bottom)
             }
-            .padding()
         }
-        .navigationTitle("詳細")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showsMetadataOverlay.toggle()
+                    }
+                } label: {
+                    Image(systemName: showsMetadataOverlay ? "info.circle.fill" : "info.circle")
+                }
+
                 Menu {
                     Button(role: .destructive) {
                         viewModel.showingDeleteConfirmation = true
@@ -68,6 +55,7 @@ struct DetailView: View {
         .task {
             await viewModel.loadPhoto()
             image = viewModel.loadImage()
+            imageData = viewModel.loadImageData()
         }
         .alert("削除確認", isPresented: $viewModel.showingDeleteConfirmation) {
             Button("キャンセル", role: .cancel) {}
@@ -101,6 +89,123 @@ struct DetailView: View {
         } message: {
             Text(viewModel.error?.localizedDescription ?? "不明なエラー")
         }
+    }
+
+    private func detailCanvas(photo: PhotoItem) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                mediaSection(photo: photo, size: proxy.size)
+
+                if showsMetadataOverlay {
+                    metadataOverlay(photo: photo, safeAreaInsets: proxy.safeAreaInsets, maxHeight: proxy.size.height * 0.58)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .animation(.easeInOut(duration: 0.2), value: showsMetadataOverlay)
+    }
+
+    private func mediaSection(photo: PhotoItem, size: CGSize) -> some View {
+        ZStack {
+            if let imageData = imageData, GIFSupport.isGIFData(imageData) {
+                AnimatedGIFView(data: imageData)
+                    .aspectRatio(mediaAspectRatio(for: photo), contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
+                    .overlay(alignment: .bottomTrailing) {
+                        gifBadge
+                    }
+            } else if let image = image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
+            } else {
+                placeholderMedia
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showsMetadataOverlay.toggle()
+            }
+        }
+    }
+
+    private var placeholderMedia: some View {
+        Color.black
+            .overlay {
+                ProgressView()
+                    .tint(.white)
+            }
+    }
+
+    private var gifBadge: some View {
+        Text("GIF")
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.black.opacity(0.7), in: Capsule())
+            .foregroundColor(.white)
+            .padding(12)
+    }
+
+    private func mediaAspectRatio(for photo: PhotoItem) -> CGFloat {
+        guard photo.width > 0, photo.height > 0 else {
+            return 1
+        }
+        return CGFloat(photo.width) / CGFloat(photo.height)
+    }
+
+    private func metadataOverlay(photo: PhotoItem, safeAreaInsets: EdgeInsets, maxHeight: CGFloat) -> some View {
+        VStack(spacing: 12) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.5))
+                .frame(width: 40, height: 5)
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(photo.fileName)
+                        .font(.headline)
+                        .lineLimit(2)
+
+                    Text(formatDate(photo.displayDate))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showsMetadataOverlay = false
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    bookInfoSection(photo: photo)
+                    tagsSection(photo: photo)
+                    albumsSection(photo: photo)
+                    metadataSection(photo: photo)
+                }
+                .padding(.bottom, 8)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, max(12, safeAreaInsets.bottom))
+        .frame(maxWidth: .infinity, maxHeight: maxHeight, alignment: .top)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .shadow(color: .black.opacity(0.2), radius: 12, y: -2)
     }
 
     private func albumsSection(photo: PhotoItem) -> some View {

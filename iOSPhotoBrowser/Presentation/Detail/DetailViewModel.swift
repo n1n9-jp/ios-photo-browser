@@ -146,6 +146,11 @@ final class DetailViewModel: ObservableObject {
         return FileStorageManager.shared.loadImage(fileName: photo.filePath)
     }
 
+    func loadImageData() -> Data? {
+        guard let photo = photo else { return nil }
+        return FileStorageManager.shared.loadImageData(fileName: photo.filePath)
+    }
+
     func loadAlbums() async {
         do {
             allAlbums = try await albumRepository.fetchAll()

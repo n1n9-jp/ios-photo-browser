@@ -70,6 +70,10 @@ struct PhotoItem: Identifiable, Hashable {
 }
 
 extension PhotoItem {
+    var isGIF: Bool {
+        URL(fileURLWithPath: fileName).pathExtension.lowercased() == "gif"
+    }
+
     var displayDate: Date {
         capturedAt ?? importedAt
     }

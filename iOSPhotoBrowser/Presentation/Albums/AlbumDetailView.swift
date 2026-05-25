@@ -71,7 +71,10 @@ struct AlbumDetailView: View {
             .padding(4)
         }
         .navigationDestination(for: PhotoItem.self) { photo in
-            DetailView(photoId: photo.id)
+            LibraryPhotoBrowserView(
+                photos: viewModel.photos,
+                initialPhotoId: photo.id
+            )
         }
     }
 
