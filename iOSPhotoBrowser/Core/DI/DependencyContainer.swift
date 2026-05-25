@@ -54,6 +54,8 @@ final class DependencyContainer {
     func makeLibraryViewModel() -> LibraryViewModel {
         LibraryViewModel(
             imageRepository: imageRepository,
+            tagRepository: tagRepository,
+            albumRepository: albumRepository,
             deleteImageUseCase: deleteImageUseCase
         )
     }
