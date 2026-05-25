@@ -160,6 +160,19 @@ struct DetailView: View {
 
                 Spacer()
 
+                if viewModel.isGeneratingAITags {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Button {
+                        Task {
+                            await viewModel.generateAITags()
+                        }
+                    } label: {
+                        Image(systemName: "sparkles")
+                    }
+                }
+
                 Button {
                     viewModel.showingTagEditor = true
                 } label: {

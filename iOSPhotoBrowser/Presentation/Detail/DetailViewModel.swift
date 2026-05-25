@@ -12,6 +12,7 @@ final class DetailViewModel: ObservableObject {
     @Published private(set) var photo: PhotoItem?
     @Published private(set) var allAlbums: [Album] = []
     @Published private(set) var isLoading = false
+    @Published private(set) var isGeneratingAITags = false
     @Published var newTagName = ""
     @Published var showingTagEditor = false
     @Published var showingAlbumSelector = false
@@ -83,6 +84,34 @@ final class DetailViewModel: ObservableObject {
             try await tagRepository.addTag(tag, to: photoId)
             await loadPhoto()
             newTagName = ""
+        } catch {
+            self.error = error
+            showingError = true
+        }
+    }
+
+    func generateAITags() async {
+        guard let image = loadImage() else {
+            self.error = LLMError.extractionFailed("画像の読み込みに失敗しました")
+            showingError = true
+            return
+        }
+
+        isGeneratingAITags = true
+        defer { isGeneratingAITags = false }
+
+        do {
+            let classification = try await LLMService.shared.classifyPersonPhoto(image)
+            guard classification.hasValidData else {
+                throw LLMError.extractionFailed("人物写真の分類結果を取得できませんでした")
+            }
+
+            let existingTagNames = Set(photo?.tags.map(\.name) ?? [])
+            for tagName in classification.suggestedTags where !existingTagNames.contains(tagName) {
+                try await tagRepository.addTag(Tag(name: tagName), to: photoId)
+            }
+
+            await loadPhoto()
         } catch {
             self.error = error
             showingError = true

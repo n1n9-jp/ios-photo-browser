@@ -97,7 +97,39 @@ actor VLMService: VLMServiceProtocol {
             throw LLMError.modelNotLoaded
         }
 
-        // 画像を一時ファイルに保存（MTMDWrapperはファイルパスを必要とする）
+        print("[VLMService] Starting extraction...")
+        let response = try await generateResponse(for: image, prompt: makeVLMBookExtractionPrompt(), using: wrapper)
+        print("[VLMService] Response: \(response.prefix(500))")
+        return parseBookInfoResponse(response)
+    }
+
+    /// 人物写真を分類してタグ候補を返す
+    func classifyPersonPhoto(from image: UIImage) async throws -> PersonPhotoClassification {
+        if !isModelLoaded {
+            try await loadModel()
+        }
+
+        guard let wrapper = wrapper else {
+            throw LLMError.modelNotLoaded
+        }
+
+        print("[VLMService] Starting person photo classification...")
+        let response = try await generateResponse(
+            for: image,
+            prompt: makePersonPhotoClassificationPrompt(),
+            using: wrapper
+        )
+        print("[VLMService] Person photo classification response: \(response.prefix(500))")
+        return parsePersonPhotoClassification(response)
+    }
+
+    // MARK: - Private Helpers
+
+    private func generateResponse(
+        for image: UIImage,
+        prompt: String,
+        using wrapper: MTMDWrapper
+    ) async throws -> String {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("jpg")
@@ -116,22 +148,12 @@ actor VLMService: VLMServiceProtocol {
             try? FileManager.default.removeItem(at: tempURL)
         }
 
-        print("[VLMService] Starting extraction...")
-
         do {
-            // 画像を追加
             try await wrapper.addImageInBackground(tempURL.path)
-
-            // プロンプトを追加
-            let prompt = makeVLMBookExtractionPrompt()
             try await wrapper.addTextInBackground(prompt, role: "user")
-
-            // 生成を開始
             try await wrapper.startGeneration()
 
-            // 生成完了を待つ
-            var response = ""
-            let maxWaitTime: TimeInterval = 60  // 最大60秒待機
+            let maxWaitTime: TimeInterval = 60
             let startTime = Date()
 
             while Date().timeIntervalSince(startTime) < maxWaitTime {
@@ -139,25 +161,19 @@ actor VLMService: VLMServiceProtocol {
                 let output = await wrapper.fullOutput
 
                 if state == .completed {
-                    response = output
-                    break
+                    if output.isEmpty {
+                        throw LLMError.extractionFailed("タイムアウト：応答がありませんでした")
+                    }
+                    await wrapper.reset()
+                    return output
                 } else if case .failed(let error) = state {
                     throw LLMError.extractionFailed(error.localizedDescription)
                 }
 
-                try await Task.sleep(nanoseconds: 100_000_000)  // 0.1秒待機
+                try await Task.sleep(nanoseconds: 100_000_000)
             }
 
-            if response.isEmpty {
-                throw LLMError.extractionFailed("タイムアウト：応答がありませんでした")
-            }
-
-            print("[VLMService] Response: \(response.prefix(500))")
-
-            // コンテキストをリセット
-            await wrapper.reset()
-
-            return parseJSONResponse(response)
+            throw LLMError.extractionFailed("タイムアウト：応答がありませんでした")
         } catch let error as MTMDError {
             await wrapper.reset()
             throw LLMError.extractionFailed(error.localizedDescription)
@@ -170,9 +186,7 @@ actor VLMService: VLMServiceProtocol {
         }
     }
 
-    // MARK: - Private Helpers
-
-    private func parseJSONResponse(_ response: String) -> ExtractedBookData {
+    private func extractJSONString(from response: String) -> String? {
         var jsonString = response
 
         // マークダウンコードブロックを除去
@@ -190,7 +204,14 @@ actor VLMService: VLMServiceProtocol {
             jsonString = String(jsonString[startIndex...endIndex])
         }
 
-        jsonString = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func parseBookInfoResponse(_ response: String) -> ExtractedBookData {
+        guard let jsonString = extractJSONString(from: response) else {
+            return ExtractedBookData(confidence: 0.1)
+        }
 
         // JSONをパース
         guard let data = jsonString.data(using: .utf8),
@@ -232,6 +253,34 @@ actor VLMService: VLMServiceProtocol {
             confidence: confidence
         )
     }
+
+    private func parsePersonPhotoClassification(_ response: String) -> PersonPhotoClassification {
+        guard let jsonString = extractJSONString(from: response) else {
+            return PersonPhotoClassification()
+        }
+
+        guard let data = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            print("[VLMService] Failed to parse person classification JSON: \(jsonString.prefix(100))")
+            return PersonPhotoClassification()
+        }
+
+        let peopleCount = (json["people_count"] as? String).flatMap(PersonPhotoClassification.PeopleCount.init(rawValue:))
+        let framing = (json["framing"] as? String).flatMap(PersonPhotoClassification.Framing.init(rawValue:))
+        let scene = (json["scene"] as? String).flatMap(PersonPhotoClassification.Scene.init(rawValue:))
+        let isSelfie = json["is_selfie"] as? Bool
+        let isGroupPhoto = json["is_group_photo"] as? Bool
+        let confidence = json["confidence"] as? Double ?? 0.0
+
+        return PersonPhotoClassification(
+            peopleCount: peopleCount,
+            framing: framing,
+            scene: scene,
+            isSelfie: isSelfie,
+            isGroupPhoto: isGroupPhoto,
+            confidence: confidence
+        )
+    }
 }
 
 // MARK: - VLM Prompt
@@ -248,6 +297,31 @@ private func makeVLMBookExtractionPrompt() -> String {
     - 見つからない項目はnull
     - タイトルと著者名を正確に読み取ってください
     - 日本語の場合は日本語で出力
+    """
+}
+
+private func makePersonPhotoClassificationPrompt() -> String {
+    """
+    この画像を人物写真として分類し、JSONのみを出力してください。
+
+    出力形式:
+    {
+      "people_count": "one" | "two" | "three_or_more" | null,
+      "framing": "face_closeup" | "upper_body" | "full_body" | "mixed" | null,
+      "scene": "indoor" | "outdoor" | null,
+      "is_selfie": true | false | null,
+      "is_group_photo": true | false | null,
+      "confidence": 0.0
+    }
+
+    ルール:
+    - 許可された値以外は出力しない
+    - 人物がはっきり写っていない場合は null を使う
+    - people_count は人物が主題として見える人数で判定する
+    - framing は最も代表的な構図を1つ選ぶ
+    - is_group_photo は記念撮影や集合写真らしい場合のみ true
+    - confidence は 0.0 から 1.0 の数値
+    - JSON以外の説明は不要
     """
 }
 

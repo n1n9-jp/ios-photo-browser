@@ -218,6 +218,17 @@ actor LLMService {
     func unloadVLMModel() async {
         await vlmService?.unloadModel()
     }
+
+    /// 人物写真を分類してタグ候補を返す
+    func classifyPersonPhoto(_ image: UIImage) async throws -> PersonPhotoClassification {
+        guard let service = vlmService else {
+            throw LLMError.notAvailable
+        }
+        guard await service.isAvailable else {
+            throw LLMError.modelNotLoaded
+        }
+        return try await service.classifyPersonPhoto(from: image)
+    }
 }
 
 // MARK: - Convenience Extension for OCRService
@@ -240,6 +251,16 @@ extension LLMService {
         } catch {
             print("[LLMService] VLM extraction failed: \(error.localizedDescription)")
             return ExtractedBookData()
+        }
+    }
+
+    /// 人物写真を分類（失敗時は空の分類を返す）
+    func classifyPersonPhotoOrEmpty(_ image: UIImage) async -> PersonPhotoClassification {
+        do {
+            return try await classifyPersonPhoto(image)
+        } catch {
+            print("[LLMService] Person photo classification failed: \(error.localizedDescription)")
+            return PersonPhotoClassification()
         }
     }
 

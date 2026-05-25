@@ -42,6 +42,101 @@ struct ExtractedBookData: Sendable {
     }
 }
 
+// MARK: - Person Photo Classification Model
+
+struct PersonPhotoClassification: Sendable {
+    enum PeopleCount: String, Sendable {
+        case one
+        case two
+        case threeOrMore = "three_or_more"
+
+        var tagName: String {
+            switch self {
+            case .one: return "1人"
+            case .two: return "2人"
+            case .threeOrMore: return "3人以上"
+            }
+        }
+    }
+
+    enum Framing: String, Sendable {
+        case faceCloseup = "face_closeup"
+        case upperBody = "upper_body"
+        case fullBody = "full_body"
+        case mixed
+
+        var tagName: String {
+            switch self {
+            case .faceCloseup: return "顔アップ"
+            case .upperBody: return "上半身"
+            case .fullBody: return "全身"
+            case .mixed: return "複数構図"
+            }
+        }
+    }
+
+    enum Scene: String, Sendable {
+        case indoor
+        case outdoor
+
+        var tagName: String {
+            switch self {
+            case .indoor: return "屋内"
+            case .outdoor: return "屋外"
+            }
+        }
+    }
+
+    var peopleCount: PeopleCount?
+    var framing: Framing?
+    var scene: Scene?
+    var isSelfie: Bool?
+    var isGroupPhoto: Bool?
+    var confidence: Double
+
+    init(
+        peopleCount: PeopleCount? = nil,
+        framing: Framing? = nil,
+        scene: Scene? = nil,
+        isSelfie: Bool? = nil,
+        isGroupPhoto: Bool? = nil,
+        confidence: Double = 0.0
+    ) {
+        self.peopleCount = peopleCount
+        self.framing = framing
+        self.scene = scene
+        self.isSelfie = isSelfie
+        self.isGroupPhoto = isGroupPhoto
+        self.confidence = confidence
+    }
+
+    var hasValidData: Bool {
+        peopleCount != nil || framing != nil || scene != nil || isSelfie == true || isGroupPhoto == true
+    }
+
+    var suggestedTags: [String] {
+        var tags: [String] = []
+
+        if let peopleCount {
+            tags.append(peopleCount.tagName)
+        }
+        if let framing {
+            tags.append(framing.tagName)
+        }
+        if let scene {
+            tags.append(scene.tagName)
+        }
+        if isSelfie == true {
+            tags.append("自撮り")
+        }
+        if isGroupPhoto == true {
+            tags.append("集合写真")
+        }
+
+        return Array(NSOrderedSet(array: tags)) as? [String] ?? tags
+    }
+}
+
 // MARK: - LLM Service Protocol
 
 /// LLMサービスのプロトコル
@@ -66,6 +161,9 @@ import UIKit
 protocol VLMServiceProtocol {
     /// 画像から書籍情報を抽出
     func extractBookInfo(from image: UIImage) async throws -> ExtractedBookData
+
+    /// 人物写真を分類してタグ候補を返す
+    func classifyPersonPhoto(from image: UIImage) async throws -> PersonPhotoClassification
 
     /// サービスが利用可能かどうか
     var isAvailable: Bool { get async }
