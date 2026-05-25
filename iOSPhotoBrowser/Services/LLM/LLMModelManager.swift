@@ -17,7 +17,9 @@ final class LLMModelManager: ObservableObject {
 
     private var downloader: ModelDownloader?
 
-    private init() {}
+    private init() {
+        reconcileBackupExclusion()
+    }
 
     // MARK: - Model Status
 
@@ -85,12 +87,7 @@ final class LLMModelManager: ObservableObject {
         }
 
         // モデルディレクトリを作成
-        guard let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            throw LLMError.downloadFailed("ドキュメントディレクトリにアクセスできません")
-        }
-
-        let modelsDir = documentsDir.appendingPathComponent("Models")
-        try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+        let modelsDir = try prepareModelsDirectory()
 
         guard let url = URL(string: LlamaService.ModelInfo.downloadURL) else {
             throw LLMError.downloadFailed("無効なダウンロードURL")
@@ -147,6 +144,30 @@ final class LLMModelManager: ObservableObject {
 
         try FileManager.default.removeItem(atPath: path)
         print("[LLMModelManager] Model deleted")
+    }
+
+    private func prepareModelsDirectory() throws -> URL {
+        guard let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            throw LLMError.downloadFailed("ドキュメントディレクトリにアクセスできません")
+        }
+
+        let modelsDir = documentsDir.appendingPathComponent("Models", isDirectory: true)
+        try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+        BackupExclusionManager.excludeDirectoryContentsFromBackup(at: modelsDir)
+        return modelsDir
+    }
+
+    private func reconcileBackupExclusion() {
+        guard let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        let modelsDir = documentsDir.appendingPathComponent("Models", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: modelsDir.path) else {
+            return
+        }
+
+        BackupExclusionManager.excludeDirectoryContentsFromBackup(at: modelsDir)
     }
 }
 
@@ -228,6 +249,7 @@ private final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unch
             }
             // 一時ファイルを移動
             try FileManager.default.moveItem(at: location, to: destinationURL)
+            BackupExclusionManager.excludeFromBackup(itemAt: destinationURL)
             print("[ModelDownloader] File saved to: \(destinationURL.path)")
             continuation?.resume()
         } catch {

@@ -472,8 +472,10 @@ struct LLMInfoView: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        LLMSettingsView()
+struct LLMSettingsView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationStack {
+            LLMSettingsView()
+        }
     }
 }

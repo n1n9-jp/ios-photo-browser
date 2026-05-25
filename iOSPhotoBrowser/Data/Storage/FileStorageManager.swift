@@ -30,10 +30,14 @@ final class FileStorageManager {
             try? fileManager.createDirectory(at: thumbnailsPath, withIntermediateDirectories: true)
         }
 
+        BackupExclusionManager.excludeFromBackup(itemAt: thumbnailsPath)
+
         return thumbnailsPath
     }
 
-    private init() {}
+    private init() {
+        BackupExclusionManager.excludeDirectoryContentsFromBackup(at: thumbnailsDirectory)
+    }
 
     // MARK: - Image Storage
 
@@ -87,6 +91,7 @@ final class FileStorageManager {
         }
 
         try data.write(to: filePath)
+        BackupExclusionManager.excludeFromBackup(itemAt: filePath)
         return fileName
     }
 
@@ -124,4 +129,51 @@ enum StorageError: Error {
     case imageConversionFailed
     case saveFailed
     case deleteFailed
+}
+
+enum BackupExclusionManager {
+    static func reconcileManagedDirectories() {
+        guard let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        let managedDirectoryNames = ["thumbnails", "Models", "VLMModels"]
+        for directoryName in managedDirectoryNames {
+            let directoryURL = documentsDirectory.appendingPathComponent(directoryName, isDirectory: true)
+            guard FileManager.default.fileExists(atPath: directoryURL.path) else {
+                continue
+            }
+            excludeDirectoryContentsFromBackup(at: directoryURL)
+        }
+    }
+
+    static func excludeFromBackup(itemAt url: URL) {
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+
+        var mutableURL = url
+        try? mutableURL.setResourceValues(resourceValues)
+    }
+
+    static func excludeDirectoryContentsFromBackup(at directoryURL: URL) {
+        excludeRecursivelyFromBackup(itemAt: directoryURL)
+    }
+
+    private static func excludeRecursivelyFromBackup(itemAt url: URL) {
+        excludeFromBackup(itemAt: url)
+
+        guard let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]),
+              resourceValues.isDirectory == true,
+              let children = try? FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+              ) else {
+            return
+        }
+
+        for childURL in children {
+            excludeRecursivelyFromBackup(itemAt: childURL)
+        }
+    }
 }

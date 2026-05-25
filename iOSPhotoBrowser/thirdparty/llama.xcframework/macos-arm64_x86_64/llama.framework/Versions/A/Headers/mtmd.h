@@ -229,7 +229,7 @@ MTMD_API mtmd_input_chunks * mtmd_test_create_input_chunks(void);
 // C++ wrappers
 //
 
-#ifdef __cplusplus
+#if defined(__cplusplus) && !defined(__swift__)
 
 namespace mtmd {
 

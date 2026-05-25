@@ -262,7 +262,9 @@ final class VLMModelManager: ObservableObject {
     @Published private(set) var isDownloading = false
     @Published private(set) var downloadError: Error?
 
-    private init() {}
+    private init() {
+        reconcileBackupExclusion()
+    }
 
     // MARK: - Model Information
 
@@ -322,12 +324,7 @@ final class VLMModelManager: ObservableObject {
         guard !isModelDownloaded else { return }
 
         // モデルディレクトリを作成
-        guard let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            throw LLMError.downloadFailed("ドキュメントディレクトリにアクセスできません")
-        }
-
-        let modelsDir = documentsDir.appendingPathComponent("VLMModels")
-        try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+        let modelsDir = try prepareModelsDirectory()
 
         isDownloading = true
         downloadProgress = 0.0
@@ -447,12 +444,7 @@ final class VLMModelManager: ObservableObject {
         let fileName = sourceURL.lastPathComponent
 
         // モデルディレクトリを作成
-        guard let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            throw LLMError.downloadFailed("ドキュメントディレクトリにアクセスできません")
-        }
-
-        let modelsDir = documentsDir.appendingPathComponent("VLMModels")
-        try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+        let modelsDir = try prepareModelsDirectory()
 
         // ファイル名に基づいてコピー先を決定
         var importType: ImportResult.ImportType = .unknown
@@ -464,6 +456,7 @@ final class VLMModelManager: ObservableObject {
                 try FileManager.default.removeItem(at: destURL)
             }
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            BackupExclusionManager.excludeFromBackup(itemAt: destURL)
             importType = .languageModel
             print("[VLMModelManager] Language model imported: \(destURL.path)")
         } else if fileName.contains("mmproj") {
@@ -473,6 +466,7 @@ final class VLMModelManager: ObservableObject {
                 try FileManager.default.removeItem(at: destURL)
             }
             try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            BackupExclusionManager.excludeFromBackup(itemAt: destURL)
             importType = .visionProjector
             print("[VLMModelManager] MMProj imported: \(destURL.path)")
         } else {
@@ -521,6 +515,30 @@ final class VLMModelManager: ObservableObject {
         guard let path = mmprojPath else { return false }
         return FileManager.default.fileExists(atPath: path)
     }
+
+    private func prepareModelsDirectory() throws -> URL {
+        guard let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            throw LLMError.downloadFailed("ドキュメントディレクトリにアクセスできません")
+        }
+
+        let modelsDir = documentsDir.appendingPathComponent("VLMModels", isDirectory: true)
+        try FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+        BackupExclusionManager.excludeDirectoryContentsFromBackup(at: modelsDir)
+        return modelsDir
+    }
+
+    private func reconcileBackupExclusion() {
+        guard let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+
+        let modelsDir = documentsDir.appendingPathComponent("VLMModels", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: modelsDir.path) else {
+            return
+        }
+
+        BackupExclusionManager.excludeDirectoryContentsFromBackup(at: modelsDir)
+    }
 }
 
 // MARK: - VLM Download Delegate
@@ -564,6 +582,7 @@ private class VLMDownloadDelegate: NSObject, URLSessionDownloadDelegate {
             }
             // 一時ファイルを目的地に移動
             try FileManager.default.moveItem(at: location, to: destination)
+            BackupExclusionManager.excludeFromBackup(itemAt: destination)
             onComplete(nil)
         } catch {
             onComplete(error)
