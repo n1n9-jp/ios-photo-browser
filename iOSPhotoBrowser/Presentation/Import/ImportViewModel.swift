@@ -12,18 +12,24 @@ import SwiftUI
 @MainActor
 final class ImportViewModel: ObservableObject {
     @Published private(set) var isImporting = false
+    @Published private(set) var isLoadingPhotoAlbums = false
     @Published private(set) var importProgress: Double = 0
     @Published private(set) var importedCount = 0
     @Published private(set) var failedCount = 0
     @Published private(set) var shouldDismiss = false
+    @Published private(set) var photoAlbums: [PhotoLibraryAlbum] = []
     @Published var showingPhotoPicker = false
     @Published var showingFilePicker = false
+    @Published var showingDirectoryPicker = false
     @Published var showingCamera = false
+    @Published var showingPhotoAlbumImporter = false
     @Published var error: Error?
     @Published var showingError = false
 
     private let importImageUseCase: ImportImageUseCase
     private let permissionService = PermissionService.shared
+    private let photoLibraryService = PhotoLibraryService.shared
+    private let fileImportService = FileImportService.shared
 
     var permissionStatus: PHAuthorizationStatus {
         permissionService.photoLibraryStatus
@@ -35,6 +41,39 @@ final class ImportViewModel: ObservableObject {
 
     func requestPhotoAccess() async {
         _ = await permissionService.requestPhotoLibraryAccess()
+    }
+
+    func openPhotoAlbumImporter() async {
+        error = nil
+        showingError = false
+
+        let status = permissionService.isPhotoLibraryAuthorized
+            ? permissionService.photoLibraryStatus
+            : await permissionService.requestPhotoLibraryAccess()
+
+        guard status == .authorized || status == .limited else {
+            error = ImportError.photoAlbumAccessRequired
+            showingError = true
+            return
+        }
+
+        isLoadingPhotoAlbums = true
+        defer { isLoadingPhotoAlbums = false }
+
+        photoAlbums = photoLibraryService.fetchAlbums()
+        showingPhotoAlbumImporter = true
+    }
+
+    func importFromPhotoAlbum(_ album: PhotoLibraryAlbum) async {
+        let assets = photoLibraryService.fetchAssets(in: album.id)
+        guard !assets.isEmpty else {
+            error = ImportError.noImportableImagesFound
+            showingError = true
+            return
+        }
+
+        showingPhotoAlbumImporter = false
+        await importFromAssets(assets)
     }
 
     func importFromPhotos(results: [PHPickerResult]) async {
@@ -108,6 +147,22 @@ final class ImportViewModel: ObservableObject {
         }
     }
 
+    func importFromDirectory(url: URL) async {
+        do {
+            let imageURLs = try fileImportService.findImportableImageURLs(in: url)
+            guard !imageURLs.isEmpty else {
+                error = ImportError.noImportableImagesFound
+                showingError = true
+                return
+            }
+
+            await importFromFiles(urls: imageURLs)
+        } catch {
+            self.error = error
+            showingError = true
+        }
+    }
+
     func importFromPhotosPickerItems(_ items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }
 
@@ -141,6 +196,36 @@ final class ImportViewModel: ObservableObject {
         isImporting = false
 
         // Auto-dismiss after short delay if import succeeded
+        if importedCount > 0 {
+            try? await Task.sleep(for: .milliseconds(800))
+            shouldDismiss = true
+        }
+    }
+
+    private func importFromAssets(_ assets: [PHAsset]) async {
+        guard !assets.isEmpty else { return }
+
+        isImporting = true
+        importProgress = 0
+        importedCount = 0
+        failedCount = 0
+
+        let total = assets.count
+
+        for (index, asset) in assets.enumerated() {
+            do {
+                _ = try await importImageUseCase.execute(from: asset)
+                importedCount += 1
+            } catch {
+                failedCount += 1
+                print("Import error: \(error)")
+            }
+
+            importProgress = Double(index + 1) / Double(total)
+        }
+
+        isImporting = false
+
         if importedCount > 0 {
             try? await Task.sleep(for: .milliseconds(800))
             shouldDismiss = true
@@ -203,4 +288,21 @@ final class ImportViewModel: ObservableObject {
 enum ImportError: Error {
     case invalidImage
     case accessDenied
+    case noImportableImagesFound
+    case photoAlbumAccessRequired
+}
+
+extension ImportError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .invalidImage:
+            return "画像の読み込みに失敗しました"
+        case .accessDenied:
+            return "アクセス権限がありません"
+        case .noImportableImagesFound:
+            return "取り込める画像が見つかりませんでした"
+        case .photoAlbumAccessRequired:
+            return "この機能は写真ライブラリへのアクセス許可が必要です。通常の「写真から選択」とは別に、アプリへの写真アクセスを許可してください"
+        }
+    }
 }

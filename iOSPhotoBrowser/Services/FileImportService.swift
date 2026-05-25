@@ -39,6 +39,35 @@ final class FileImportService {
         url.lastPathComponent
     }
 
+    func findImportableImageURLs(in directoryURL: URL) throws -> [URL] {
+        guard directoryURL.startAccessingSecurityScopedResource() else {
+            throw FileImportError.accessDenied
+        }
+
+        defer {
+            directoryURL.stopAccessingSecurityScopedResource()
+        }
+
+        let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey]
+        let directoryContents = try FileManager.default.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: Array(resourceKeys),
+            options: [.skipsHiddenFiles]
+        )
+
+        return directoryContents
+            .filter { url in
+                guard let values = try? url.resourceValues(forKeys: resourceKeys),
+                      values.isRegularFile == true,
+                      let contentType = values.contentType else {
+                    return false
+                }
+
+                return Self.supportedTypes.contains { contentType.conforms(to: $0) }
+            }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
     static var supportedTypes: [UTType] {
         [.image, .jpeg, .png, .heic, .gif, .webP, .tiff, .bmp]
     }

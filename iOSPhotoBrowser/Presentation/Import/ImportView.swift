@@ -47,10 +47,29 @@ struct ImportView: View {
                     viewModel.showingError = true
                 }
             }
+            .fileImporter(
+                isPresented: $viewModel.showingDirectoryPicker,
+                allowedContentTypes: [.folder],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let directoryURL = urls.first else { return }
+                    Task {
+                        await viewModel.importFromDirectory(url: directoryURL)
+                    }
+                case .failure(let error):
+                    viewModel.error = error
+                    viewModel.showingError = true
+                }
+            }
             .alert("エラー", isPresented: $viewModel.showingError) {
                 Button("OK") {}
             } message: {
                 Text(viewModel.error?.localizedDescription ?? "不明なエラー")
+            }
+            .sheet(isPresented: $viewModel.showingPhotoAlbumImporter) {
+                photoAlbumImportSheet
             }
             .onChange(of: selectedItems) { _, newItems in
                 guard !newItems.isEmpty else { return }
@@ -115,6 +134,24 @@ struct ImportView: View {
             }
 
             Button {
+                Task {
+                    await viewModel.openPhotoAlbumImporter()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "rectangle.stack.badge.plus")
+                        .font(.title2)
+                    Text("アルバムを丸ごと取り込み")
+                        .font(.headline)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.indigo)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+
+            Button {
                 viewModel.showingFilePicker = true
             } label: {
                 HStack {
@@ -130,9 +167,25 @@ struct ImportView: View {
                 .cornerRadius(12)
             }
 
+            Button {
+                viewModel.showingDirectoryPicker = true
+            } label: {
+                HStack {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.title2)
+                    Text("フォルダを丸ごと取り込み")
+                        .font(.headline)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.brown)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+
             Spacer()
 
-            Text("カメラ、写真、ファイルアプリから画像を取り込めます")
+            Text("カメラ、写真、アルバム、ファイル、フォルダから画像を取り込めます")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -172,5 +225,54 @@ struct ImportView: View {
         .padding()
         .background(Color.gray.opacity(0.1))
         .cornerRadius(8)
+    }
+
+    private var photoAlbumImportSheet: some View {
+        NavigationStack {
+            Group {
+                if viewModel.isLoadingPhotoAlbums {
+                    ProgressView("アルバムを読み込み中...")
+                } else if viewModel.photoAlbums.isEmpty {
+                    EmptyStateView(
+                        icon: "photo.on.rectangle.angled",
+                        title: "アルバムがありません",
+                        message: "取り込める写真アルバムが見つかりません"
+                    )
+                } else {
+                    List(viewModel.photoAlbums) { album in
+                        Button {
+                            Task {
+                                await viewModel.importFromPhotoAlbum(album)
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "photo.stack")
+                                    .foregroundColor(.indigo)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(album.title)
+                                        .foregroundColor(.primary)
+                                    Text("\(album.assetCount)枚をまとめて取り込む")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer()
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("写真アルバム")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") {
+                        viewModel.showingPhotoAlbumImporter = false
+                    }
+                }
+            }
+        }
+        .presentationDetents([.large])
     }
 }
