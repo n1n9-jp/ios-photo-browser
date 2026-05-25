@@ -11,6 +11,7 @@ struct ImportView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: ImportViewModel
     @State private var selectedItems: [PhotosPickerItem] = []
+    private let maxSelectionCount = 300
 
     init() {
         _viewModel = StateObject(wrappedValue: DependencyContainer.shared.makeImportViewModel())
@@ -97,7 +98,7 @@ struct ImportView: View {
 
             PhotosPicker(
                 selection: $selectedItems,
-                maxSelectionCount: 100,
+                maxSelectionCount: maxSelectionCount,
                 matching: .images
             ) {
                 HStack {

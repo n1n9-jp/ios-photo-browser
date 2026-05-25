@@ -17,7 +17,7 @@ struct AlbumsListView: View {
             Group {
                 if viewModel.isLoading {
                     ProgressView("読み込み中...")
-                } else if viewModel.albums.isEmpty {
+                } else if viewModel.displayedAlbums.isEmpty {
                     EmptyStateView(
                         icon: "rectangle.stack",
                         title: "アルバムがありません",
@@ -39,8 +39,10 @@ struct AlbumsListView: View {
                     }
                 }
             }
-            .task {
-                await viewModel.loadAlbums()
+            .onAppear {
+                Task {
+                    await viewModel.loadAlbums()
+                }
             }
             .refreshable {
                 await viewModel.loadAlbums()
@@ -58,6 +60,15 @@ struct AlbumsListView: View {
 
     private var albumsList: some View {
         List {
+            if viewModel.unregisteredAlbumCount > 0 {
+                NavigationLink(value: Album.unregistered) {
+                    AlbumRow(
+                        album: Album.unregistered,
+                        imageCount: viewModel.unregisteredAlbumCount
+                    )
+                }
+            }
+
             ForEach(viewModel.albums) { album in
                 NavigationLink(value: album) {
                     AlbumRow(
@@ -102,7 +113,7 @@ struct AlbumsListView: View {
                             await viewModel.createAlbum()
                         }
                     }
-                    .disabled(viewModel.newAlbumName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!viewModel.canCreateAlbum)
                 }
             }
         }

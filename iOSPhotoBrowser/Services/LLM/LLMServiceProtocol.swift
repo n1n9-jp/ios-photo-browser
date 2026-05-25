@@ -184,6 +184,7 @@ enum LLMError: Error, LocalizedError {
     case notAvailable
     case modelNotLoaded
     case extractionFailed(String)
+    case classificationFailed(String)
     case invalidResponse
     case downloadFailed(String)
     case insufficientStorage
@@ -196,6 +197,8 @@ enum LLMError: Error, LocalizedError {
             return "モデルが読み込まれていません"
         case .extractionFailed(let reason):
             return "書籍情報の抽出に失敗しました: \(reason)"
+        case .classificationFailed(let reason):
+            return "人物分類に失敗しました: \(reason)"
         case .invalidResponse:
             return "無効なレスポンスです"
         case .downloadFailed(let reason):

@@ -92,7 +92,7 @@ final class DetailViewModel: ObservableObject {
 
     func generateAITags() async {
         guard let image = loadImage() else {
-            self.error = LLMError.extractionFailed("画像の読み込みに失敗しました")
+            self.error = LLMError.classificationFailed("画像の読み込みに失敗しました")
             showingError = true
             return
         }
@@ -103,7 +103,7 @@ final class DetailViewModel: ObservableObject {
         do {
             let classification = try await LLMService.shared.classifyPersonPhoto(image)
             guard classification.hasValidData else {
-                throw LLMError.extractionFailed("人物写真の分類結果を取得できませんでした")
+                throw LLMError.classificationFailed("人物写真の分類結果を取得できませんでした")
             }
 
             let existingTagNames = Set(photo?.tags.map(\.name) ?? [])

@@ -14,5 +14,7 @@ protocol ImageRepositoryProtocol {
     func search(byTag tagName: String) async throws -> [PhotoItem]
     func search(query: String) async throws -> [PhotoItem]
     func fetchImages(inAlbum albumId: UUID) async throws -> [PhotoItem]
+    func fetchUnassignedImages() async throws -> [PhotoItem]
+    func fetchUnassignedImageCount() async throws -> Int
     func updateExtractedText(imageId: UUID, text: String, processedAt: Date) async throws
 }

@@ -26,15 +26,19 @@ struct AlbumDetailView: View {
                 EmptyStateView(
                     icon: "photo.on.rectangle",
                     title: "写真がありません",
-                    message: "このアルバムにはまだ写真がありません"
+                    message: viewModel.album.isUnregisteredSmartAlbum
+                        ? "どのアルバムにも登録されていない写真はありません"
+                        : "このアルバムにはまだ写真がありません"
                 )
             } else {
                 photoGrid
             }
         }
         .navigationTitle(viewModel.album.name)
-        .task {
-            await viewModel.loadPhotos()
+        .onAppear {
+            Task {
+                await viewModel.loadPhotos()
+            }
         }
         .refreshable {
             await viewModel.loadPhotos()
@@ -54,12 +58,14 @@ struct AlbumDetailView: View {
                         PhotoGridItem(photo: photo)
                     }
                     .contextMenu {
-                        Button(role: .destructive) {
-                            Task {
-                                await viewModel.removeImage(photo)
+                        if viewModel.canRemoveFromAlbum {
+                            Button(role: .destructive) {
+                                Task {
+                                    await viewModel.removeImage(photo)
+                                }
+                            } label: {
+                                Label("アルバムから削除", systemImage: "minus.circle")
                             }
-                        } label: {
-                            Label("アルバムから削除", systemImage: "minus.circle")
                         }
                     }
                 }

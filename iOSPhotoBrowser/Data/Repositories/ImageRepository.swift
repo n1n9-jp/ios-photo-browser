@@ -96,6 +96,25 @@ final class ImageRepository: ImageRepositoryProtocol {
         }
     }
 
+    func fetchUnassignedImages() async throws -> [PhotoItem] {
+        try await context.perform {
+            let request = ImageEntity.fetchRequest()
+            request.predicate = self.unassignedAlbumsPredicate
+            request.sortDescriptors = [NSSortDescriptor(key: "importedAt", ascending: false)]
+
+            let entities = try self.context.fetch(request)
+            return entities.map { self.toPhotoItem($0) }
+        }
+    }
+
+    func fetchUnassignedImageCount() async throws -> Int {
+        try await context.perform {
+            let request = ImageEntity.fetchRequest()
+            request.predicate = self.unassignedAlbumsPredicate
+            return try self.context.count(for: request)
+        }
+    }
+
     func updateExtractedText(imageId: UUID, text: String, processedAt: Date) async throws {
         try await context.perform {
             let request = ImageEntity.fetchRequest()
@@ -133,6 +152,10 @@ final class ImageRepository: ImageRepositoryProtocol {
     }
 
     // MARK: - Private Helpers
+
+    private var unassignedAlbumsPredicate: NSPredicate {
+        NSPredicate(format: "SUBQUERY(albums, $album, TRUEPREDICATE).@count == 0")
+    }
 
     private func toPhotoItem(_ entity: ImageEntity) -> PhotoItem {
         let tags: [Tag] = (entity.tags as? Set<TagEntity>)?.map { tagEntity in

@@ -114,13 +114,30 @@ actor VLMService: VLMServiceProtocol {
         }
 
         print("[VLMService] Starting person photo classification...")
-        let response = try await generateResponse(
-            for: image,
-            prompt: makePersonPhotoClassificationPrompt(),
-            using: wrapper
-        )
-        print("[VLMService] Person photo classification response: \(response.prefix(500))")
-        return parsePersonPhotoClassification(response)
+        do {
+            let response = try await generateResponse(
+                for: image,
+                prompt: makePersonPhotoClassificationPrompt(),
+                using: wrapper
+            )
+            print("[VLMService] Person photo classification response: \(response.prefix(500))")
+            let classification = parsePersonPhotoClassification(response)
+
+            guard classification.hasValidData else {
+                throw LLMError.classificationFailed("有効な分類結果を取得できませんでした")
+            }
+
+            return classification
+        } catch let error as LLMError {
+            switch error {
+            case .extractionFailed(let reason):
+                throw LLMError.classificationFailed(reason)
+            default:
+                throw error
+            }
+        } catch {
+            throw LLMError.classificationFailed(error.localizedDescription)
+        }
     }
 
     // MARK: - Private Helpers
@@ -265,12 +282,15 @@ actor VLMService: VLMServiceProtocol {
             return PersonPhotoClassification()
         }
 
-        let peopleCount = (json["people_count"] as? String).flatMap(PersonPhotoClassification.PeopleCount.init(rawValue:))
-        let framing = (json["framing"] as? String).flatMap(PersonPhotoClassification.Framing.init(rawValue:))
-        let scene = (json["scene"] as? String).flatMap(PersonPhotoClassification.Scene.init(rawValue:))
-        let isSelfie = json["is_selfie"] as? Bool
-        let isGroupPhoto = json["is_group_photo"] as? Bool
-        let confidence = json["confidence"] as? Double ?? 0.0
+        if let explicitTags = extractClassificationTags(from: json), !explicitTags.isEmpty {
+            return buildClassification(from: explicitTags, confidence: parseConfidence(from: json))
+        }
+
+        let peopleCount = parsePeopleCount(from: json)
+        let framing = parseFraming(from: json)
+        let scene = parseScene(from: json)
+        let isSelfie = parseBoolean(from: json["is_selfie"] ?? json["selfie"])
+        let isGroupPhoto = parseBoolean(from: json["is_group_photo"] ?? json["group_photo"] ?? json["is_group"])
 
         return PersonPhotoClassification(
             peopleCount: peopleCount,
@@ -278,8 +298,196 @@ actor VLMService: VLMServiceProtocol {
             scene: scene,
             isSelfie: isSelfie,
             isGroupPhoto: isGroupPhoto,
+            confidence: parseConfidence(from: json)
+        )
+    }
+
+    private func extractClassificationTags(from json: [String: Any]) -> [String]? {
+        if let tags = json["tags"] as? [String] {
+            return tags.compactMap(normalizeClassificationTag)
+        }
+
+        if let tagsString = json["tags"] as? String {
+            let separators = CharacterSet(charactersIn: ",/\n")
+            return tagsString
+                .components(separatedBy: separators)
+                .compactMap(normalizeClassificationTag)
+        }
+
+        return nil
+    }
+
+    private func buildClassification(from tags: [String], confidence: Double) -> PersonPhotoClassification {
+        let normalizedTags = Set(tags)
+
+        let peopleCount: PersonPhotoClassification.PeopleCount?
+        if normalizedTags.contains("3人以上") {
+            peopleCount = .threeOrMore
+        } else if normalizedTags.contains("2人") {
+            peopleCount = .two
+        } else if normalizedTags.contains("1人") {
+            peopleCount = .one
+        } else {
+            peopleCount = nil
+        }
+
+        let framing: PersonPhotoClassification.Framing?
+        if normalizedTags.contains("複数構図") {
+            framing = .mixed
+        } else if normalizedTags.contains("全身") {
+            framing = .fullBody
+        } else if normalizedTags.contains("上半身") {
+            framing = .upperBody
+        } else if normalizedTags.contains("顔アップ") {
+            framing = .faceCloseup
+        } else {
+            framing = nil
+        }
+
+        let scene: PersonPhotoClassification.Scene?
+        if normalizedTags.contains("屋内") {
+            scene = .indoor
+        } else if normalizedTags.contains("屋外") {
+            scene = .outdoor
+        } else {
+            scene = nil
+        }
+
+        return PersonPhotoClassification(
+            peopleCount: peopleCount,
+            framing: framing,
+            scene: scene,
+            isSelfie: normalizedTags.contains("自撮り"),
+            isGroupPhoto: normalizedTags.contains("集合写真"),
             confidence: confidence
         )
+    }
+
+    private func parsePeopleCount(from json: [String: Any]) -> PersonPhotoClassification.PeopleCount? {
+        if let value = json["people_count"] ?? json["person_count"] ?? json["count"] {
+            if let number = value as? Int {
+                switch number {
+                case 1: return .one
+                case 2: return .two
+                case 3...: return .threeOrMore
+                default: return nil
+                }
+            }
+
+            if let stringValue = value as? String {
+                switch stringValue
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased() {
+                case "one", "single", "solo", "1", "1人", "一人":
+                    return .one
+                case "two", "pair", "2", "2人", "二人":
+                    return .two
+                case "three_or_more", "three or more", "three+", "multiple", "many", "3", "3人以上", "複数人":
+                    return .threeOrMore
+                default:
+                    return nil
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private func parseFraming(from json: [String: Any]) -> PersonPhotoClassification.Framing? {
+        guard let value = (json["framing"] ?? json["composition"] ?? json["crop"]) as? String else {
+            return nil
+        }
+
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "face_closeup", "closeup", "face closeup", "face", "顔アップ", "顔のアップ":
+            return .faceCloseup
+        case "upper_body", "upper body", "half_body", "half body", "bust_up", "上半身", "バストアップ":
+            return .upperBody
+        case "full_body", "full body", "full-body", "全身":
+            return .fullBody
+        case "mixed", "multiple", "複数構図":
+            return .mixed
+        default:
+            return nil
+        }
+    }
+
+    private func parseScene(from json: [String: Any]) -> PersonPhotoClassification.Scene? {
+        guard let value = (json["scene"] ?? json["location"]) as? String else {
+            return nil
+        }
+
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "indoor", "indoors", "inside", "屋内":
+            return .indoor
+        case "outdoor", "outdoors", "outside", "屋外":
+            return .outdoor
+        default:
+            return nil
+        }
+    }
+
+    private func parseBoolean(from value: Any?) -> Bool? {
+        switch value {
+        case let bool as Bool:
+            return bool
+        case let number as NSNumber:
+            return number.boolValue
+        case let string as String:
+            switch string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "true", "yes", "1", "はい":
+                return true
+            case "false", "no", "0", "いいえ":
+                return false
+            default:
+                return nil
+            }
+        default:
+            return nil
+        }
+    }
+
+    private func parseConfidence(from json: [String: Any]) -> Double {
+        if let confidence = json["confidence"] as? Double {
+            return confidence
+        }
+        if let confidence = json["confidence"] as? NSNumber {
+            return confidence.doubleValue
+        }
+        if let confidenceString = json["confidence"] as? String,
+           let confidence = Double(confidenceString) {
+            return confidence
+        }
+        return 0.0
+    }
+
+    private func normalizeClassificationTag(_ rawTag: String) -> String? {
+        switch rawTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1人", "一人", "one", "single", "solo", "1":
+            return "1人"
+        case "2人", "二人", "two", "pair", "2":
+            return "2人"
+        case "3人以上", "複数人", "three_or_more", "three or more", "three+", "multiple", "many", "3+":
+            return "3人以上"
+        case "顔アップ", "顔のアップ", "face_closeup", "face closeup", "closeup", "close-up":
+            return "顔アップ"
+        case "上半身", "バストアップ", "upper_body", "upper body", "half_body", "bust_up":
+            return "上半身"
+        case "全身", "full_body", "full body", "full-body":
+            return "全身"
+        case "複数構図", "mixed":
+            return "複数構図"
+        case "屋内", "indoor", "indoors", "inside":
+            return "屋内"
+        case "屋外", "outdoor", "outdoors", "outside":
+            return "屋外"
+        case "自撮り", "selfie", "self-portrait":
+            return "自撮り"
+        case "集合写真", "group_photo", "group photo":
+            return "集合写真"
+        default:
+            return nil
+        }
     }
 }
 
@@ -302,26 +510,22 @@ private func makeVLMBookExtractionPrompt() -> String {
 
 private func makePersonPhotoClassificationPrompt() -> String {
     """
-    この画像を人物写真として分類し、JSONのみを出力してください。
+    この画像を人物写真として分類し、必ずJSONのみを出力してください。
 
     出力形式:
     {
-      "people_count": "one" | "two" | "three_or_more" | null,
-      "framing": "face_closeup" | "upper_body" | "full_body" | "mixed" | null,
-      "scene": "indoor" | "outdoor" | null,
-      "is_selfie": true | false | null,
-      "is_group_photo": true | false | null,
+      "tags": ["1人", "上半身", "屋内"],
       "confidence": 0.0
     }
 
     ルール:
-    - 許可された値以外は出力しない
-    - 人物がはっきり写っていない場合は null を使う
-    - people_count は人物が主題として見える人数で判定する
-    - framing は最も代表的な構図を1つ選ぶ
-    - is_group_photo は記念撮影や集合写真らしい場合のみ true
+    - tags には次の候補だけを入れる: 1人, 2人, 3人以上, 顔アップ, 上半身, 全身, 複数構図, 屋内, 屋外, 自撮り, 集合写真
+    - 当てはまらないタグは入れない
+    - 人物が主題でない場合は tags を空配列にする
+    - 人数は人物が主題として見える人数で判定する
+    - 構図は最も代表的なものを1つ選ぶ
+    - JSON以外の説明文、コードブロック前後の文章、補足は禁止
     - confidence は 0.0 から 1.0 の数値
-    - JSON以外の説明は不要
     """
 }
 

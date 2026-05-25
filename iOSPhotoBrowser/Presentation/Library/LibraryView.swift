@@ -131,7 +131,10 @@ struct LibraryView: View {
             .padding(4)
         }
         .navigationDestination(for: PhotoItem.self) { photo in
-            DetailView(photoId: photo.id)
+            LibraryPhotoBrowserView(
+                photos: viewModel.photos,
+                initialPhotoId: photo.id
+            )
         }
     }
 
@@ -175,7 +178,10 @@ struct LibraryView: View {
     private var selectionActionBar: some View {
         VStack(spacing: 12) {
             HStack {
-                Text(viewModel.hasSelection ? "\(viewModel.selectedPhotoCount)枚を選択中" : "画像を選択してください")
+                Text(
+                    viewModel.currentBatchActionLabel ??
+                    (viewModel.hasSelection ? "\(viewModel.selectedPhotoCount)枚を選択中" : "画像を選択してください")
+                )
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
@@ -185,33 +191,47 @@ struct LibraryView: View {
                 }
             }
 
-            HStack(spacing: 12) {
-                Button {
-                    viewModel.showingTagEditor = true
-                } label: {
-                    Label("タグ追加", systemImage: "tag")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    Task {
-                        await viewModel.openAlbumSelector()
+            VStack(spacing: 8) {
+                HStack(spacing: 12) {
+                    Button {
+                        Task {
+                            await viewModel.generateAITagsForSelectedPhotos()
+                        }
+                    } label: {
+                        Label("AI分類", systemImage: "sparkles")
+                            .frame(maxWidth: .infinity)
                     }
-                } label: {
-                    Label("アルバム追加", systemImage: "rectangle.stack.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+                    .buttonStyle(.bordered)
 
-                Button(role: .destructive) {
-                    viewModel.showingDeleteConfirmation = true
-                } label: {
-                    Label("削除", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
+                    Button {
+                        viewModel.showingTagEditor = true
+                    } label: {
+                        Label("タグ追加", systemImage: "tag")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
-                .tint(.red)
+
+                HStack(spacing: 12) {
+                    Button {
+                        Task {
+                            await viewModel.openAlbumSelector()
+                        }
+                    } label: {
+                        Label("アルバム追加", systemImage: "rectangle.stack.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(role: .destructive) {
+                        viewModel.showingDeleteConfirmation = true
+                    } label: {
+                        Label("削除", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                }
             }
             .font(.subheadline)
             .disabled(!viewModel.hasSelection || viewModel.isPerformingBatchAction)

@@ -10,6 +10,7 @@ import Combine
 final class AlbumsViewModel: ObservableObject {
     @Published private(set) var albums: [Album] = []
     @Published private(set) var albumImageCounts: [UUID: Int] = [:]
+    @Published private(set) var unregisteredAlbumCount = 0
     @Published private(set) var isLoading = false
     @Published var showingCreateSheet = false
     @Published var newAlbumName = ""
@@ -27,18 +28,34 @@ final class AlbumsViewModel: ObservableObject {
         self.imageRepository = imageRepository
     }
 
+    var displayedAlbums: [Album] {
+        if unregisteredAlbumCount > 0 {
+            return [Album.unregistered] + albums
+        }
+        return albums
+    }
+
+    var canCreateAlbum: Bool {
+        let name = normalizedNewAlbumName
+        return !name.isEmpty && name != Album.unregisteredAlbumName
+    }
+
     func loadAlbums() async {
         isLoading = true
         defer { isLoading = false }
 
         do {
             albums = try await albumRepository.fetchAll()
+            albumImageCounts.removeAll()
 
             // Load image counts for each album
             for album in albums {
                 let count = try await albumRepository.fetchImageCount(for: album.id)
                 albumImageCounts[album.id] = count
             }
+
+            unregisteredAlbumCount = try await imageRepository.fetchUnassignedImageCount()
+            albumImageCounts[Album.unregisteredAlbumId] = unregisteredAlbumCount
         } catch {
             self.error = error
             showingError = true
@@ -46,9 +63,14 @@ final class AlbumsViewModel: ObservableObject {
     }
 
     func createAlbum() async {
-        guard !newAlbumName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard !normalizedNewAlbumName.isEmpty else { return }
+        guard canCreateAlbum else {
+            error = AlbumValidationError.reservedName
+            showingError = true
+            return
+        }
 
-        let album = Album(name: newAlbumName.trimmingCharacters(in: .whitespaces))
+        let album = Album(name: normalizedNewAlbumName)
 
         do {
             try await albumRepository.save(album)
@@ -64,7 +86,7 @@ final class AlbumsViewModel: ObservableObject {
     func deleteAlbum(_ album: Album) async {
         do {
             try await albumRepository.delete(album)
-            albums.removeAll { $0.id == album.id }
+            await loadAlbums()
         } catch {
             self.error = error
             showingError = true
@@ -82,6 +104,21 @@ final class AlbumsViewModel: ObservableObject {
         } catch {
             self.error = error
             showingError = true
+        }
+    }
+
+    private var normalizedNewAlbumName: String {
+        newAlbumName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private enum AlbumValidationError: LocalizedError {
+    case reservedName
+
+    var errorDescription: String? {
+        switch self {
+        case .reservedName:
+            return "「未登録」はシステム用アルバム名のため作成できません"
         }
     }
 }

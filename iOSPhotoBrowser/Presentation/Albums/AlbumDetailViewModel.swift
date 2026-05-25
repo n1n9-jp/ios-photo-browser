@@ -27,12 +27,20 @@ final class AlbumDetailViewModel: ObservableObject {
         self.imageRepository = imageRepository
     }
 
+    var canRemoveFromAlbum: Bool {
+        !album.isUnregisteredSmartAlbum
+    }
+
     func loadPhotos() async {
         isLoading = true
         defer { isLoading = false }
 
         do {
-            photos = try await imageRepository.fetchImages(inAlbum: album.id)
+            if album.isUnregisteredSmartAlbum {
+                photos = try await imageRepository.fetchUnassignedImages()
+            } else {
+                photos = try await imageRepository.fetchImages(inAlbum: album.id)
+            }
         } catch {
             self.error = error
             showingError = true
@@ -40,6 +48,8 @@ final class AlbumDetailViewModel: ObservableObject {
     }
 
     func removeImage(_ photo: PhotoItem) async {
+        guard canRemoveFromAlbum else { return }
+
         do {
             try await albumRepository.removeImage(photo.id, from: album.id)
             photos.removeAll { $0.id == photo.id }
