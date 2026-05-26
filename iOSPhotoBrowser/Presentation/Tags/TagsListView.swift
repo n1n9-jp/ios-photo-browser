@@ -76,6 +76,7 @@ struct TagImagesView: View {
     let tag: Tag
     @State private var photos: [PhotoItem] = []
     @State private var isLoading = false
+    @State private var lastViewedPhotoID: UUID?
 
     private let columns = [
         GridItem(.flexible(), spacing: 4),
@@ -94,21 +95,36 @@ struct TagImagesView: View {
                     message: "このタグが付いた写真はありません"
                 )
             } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 4) {
-                        ForEach(photos) { photo in
-                            NavigationLink(value: photo) {
-                                PhotoGridItem(photo: photo)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 4) {
+                            ForEach(photos) { photo in
+                                NavigationLink(value: photo) {
+                                    PhotoGridItem(photo: photo)
+                                }
+                                .id(photo.id)
+                                .simultaneousGesture(TapGesture().onEnded {
+                                    lastViewedPhotoID = photo.id
+                                })
                             }
                         }
+                        .padding(4)
                     }
-                    .padding(4)
-                }
-                .navigationDestination(for: PhotoItem.self) { photo in
-                    LibraryPhotoBrowserView(
-                        photos: photos,
-                        initialPhotoId: photo.id
-                    )
+                    .onAppear {
+                        restoreScrollPosition(using: proxy)
+                    }
+                    .onChange(of: photos.map(\.id)) { _, _ in
+                        restoreScrollPosition(using: proxy)
+                    }
+                    .navigationDestination(for: PhotoItem.self) { photo in
+                        LibraryPhotoBrowserView(
+                            photos: photos,
+                            initialPhotoId: photo.id,
+                            onCurrentPhotoChanged: { photoID in
+                                lastViewedPhotoID = photoID
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -127,6 +143,15 @@ struct TagImagesView: View {
             photos = try await repository.search(byTag: tag.name)
         } catch {
             print("Error loading photos: \(error)")
+        }
+    }
+
+    private func restoreScrollPosition(using proxy: ScrollViewProxy) {
+        guard let lastViewedPhotoID else { return }
+
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo(lastViewedPhotoID, anchor: .center)
         }
     }
 }

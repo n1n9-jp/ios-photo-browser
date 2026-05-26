@@ -9,6 +9,7 @@ struct LibraryView: View {
     @StateObject private var viewModel: LibraryViewModel
     @State private var showingImportSheet = false
     @State private var showingSettings = false
+    @State private var lastViewedPhotoID: UUID?
 
     private let columns = [
         GridItem(.flexible(), spacing: 4),
@@ -122,19 +123,31 @@ struct LibraryView: View {
     }
 
     private var photoGrid: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(viewModel.photos) { photo in
-                    photoCell(for: photo)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 4) {
+                    ForEach(viewModel.photos) { photo in
+                        photoCell(for: photo)
+                            .id(photo.id)
+                    }
                 }
+                .padding(4)
             }
-            .padding(4)
-        }
-        .navigationDestination(for: PhotoItem.self) { photo in
-            LibraryPhotoBrowserView(
-                photos: viewModel.photos,
-                initialPhotoId: photo.id
-            )
+            .onAppear {
+                restoreScrollPosition(using: proxy)
+            }
+            .onChange(of: viewModel.photos.map(\.id)) { _, _ in
+                restoreScrollPosition(using: proxy)
+            }
+            .navigationDestination(for: PhotoItem.self) { photo in
+                LibraryPhotoBrowserView(
+                    photos: viewModel.photos,
+                    initialPhotoId: photo.id,
+                    onCurrentPhotoChanged: { photoID in
+                        lastViewedPhotoID = photoID
+                    }
+                )
+            }
         }
     }
 
@@ -151,6 +164,9 @@ struct LibraryView: View {
             NavigationLink(value: photo) {
                 selectablePhotoGridItem(photo: photo)
             }
+            .simultaneousGesture(TapGesture().onEnded {
+                lastViewedPhotoID = photo.id
+            })
         }
     }
 
@@ -343,5 +359,14 @@ struct LibraryView: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private func restoreScrollPosition(using proxy: ScrollViewProxy) {
+        guard let lastViewedPhotoID else { return }
+
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo(lastViewedPhotoID, anchor: .center)
+        }
     }
 }

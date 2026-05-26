@@ -7,10 +7,12 @@ import SwiftUI
 
 struct LibraryPhotoBrowserView: View {
     let photos: [PhotoItem]
+    let onCurrentPhotoChanged: ((UUID) -> Void)?
     @State private var currentIndex: Int
 
-    init(photos: [PhotoItem], initialPhotoId: UUID) {
+    init(photos: [PhotoItem], initialPhotoId: UUID, onCurrentPhotoChanged: ((UUID) -> Void)? = nil) {
         self.photos = photos
+        self.onCurrentPhotoChanged = onCurrentPhotoChanged
         _currentIndex = State(initialValue: photos.firstIndex { $0.id == initialPhotoId } ?? 0)
     }
 
@@ -20,6 +22,12 @@ struct LibraryPhotoBrowserView: View {
                 DetailView(photoId: photos[currentIndex].id)
                     .id(photos[currentIndex].id)
                     .simultaneousGesture(photoSwipeGesture)
+                    .onAppear {
+                        notifyCurrentPhotoChanged()
+                    }
+                    .onChange(of: currentIndex) { _, _ in
+                        notifyCurrentPhotoChanged()
+                    }
             } else {
                 EmptyStateView(
                     icon: "photo",
@@ -57,5 +65,10 @@ struct LibraryPhotoBrowserView: View {
     private func moveToPreviousPhoto() {
         guard currentIndex > 0 else { return }
         currentIndex -= 1
+    }
+
+    private func notifyCurrentPhotoChanged() {
+        guard photos.indices.contains(currentIndex) else { return }
+        onCurrentPhotoChanged?(photos[currentIndex].id)
     }
 }

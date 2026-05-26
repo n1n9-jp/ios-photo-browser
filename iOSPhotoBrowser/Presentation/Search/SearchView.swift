@@ -7,6 +7,7 @@ import SwiftUI
 
 struct SearchView: View {
     @StateObject private var viewModel: SearchViewModel
+    @State private var lastViewedPhotoID: UUID?
 
     private let columns = [
         GridItem(.flexible(), spacing: 4),
@@ -71,28 +72,52 @@ struct SearchView: View {
     }
 
     private var searchResultsGrid: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("\(viewModel.searchResults.count)件の結果")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(viewModel.searchResults.count)件の結果")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
 
-                LazyVGrid(columns: columns, spacing: 4) {
-                    ForEach(viewModel.searchResults) { photo in
-                        NavigationLink(value: photo) {
-                            PhotoGridItem(photo: photo)
+                    LazyVGrid(columns: columns, spacing: 4) {
+                        ForEach(viewModel.searchResults) { photo in
+                            NavigationLink(value: photo) {
+                                PhotoGridItem(photo: photo)
+                            }
+                            .id(photo.id)
+                            .simultaneousGesture(TapGesture().onEnded {
+                                lastViewedPhotoID = photo.id
+                            })
                         }
                     }
+                    .padding(4)
                 }
-                .padding(4)
+            }
+            .onAppear {
+                restoreScrollPosition(using: proxy)
+            }
+            .onChange(of: viewModel.searchResults.map(\.id)) { _, _ in
+                restoreScrollPosition(using: proxy)
+            }
+            .navigationDestination(for: PhotoItem.self) { photo in
+                LibraryPhotoBrowserView(
+                    photos: viewModel.searchResults,
+                    initialPhotoId: photo.id,
+                    onCurrentPhotoChanged: { photoID in
+                        lastViewedPhotoID = photoID
+                    }
+                )
             }
         }
-        .navigationDestination(for: PhotoItem.self) { photo in
-            LibraryPhotoBrowserView(
-                photos: viewModel.searchResults,
-                initialPhotoId: photo.id
-            )
+    }
+
+    private func restoreScrollPosition(using proxy: ScrollViewProxy) {
+        guard let lastViewedPhotoID else { return }
+
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo(lastViewedPhotoID, anchor: .center)
         }
     }
 }

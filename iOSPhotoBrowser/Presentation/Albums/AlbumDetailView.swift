@@ -7,6 +7,7 @@ import SwiftUI
 
 struct AlbumDetailView: View {
     @StateObject private var viewModel: AlbumDetailViewModel
+    @State private var lastViewedPhotoID: UUID?
 
     private let columns = [
         GridItem(.flexible(), spacing: 4),
@@ -62,19 +63,31 @@ struct AlbumDetailView: View {
     }
 
     private var photoGrid: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(viewModel.photos) { photo in
-                    photoCell(for: photo)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 4) {
+                    ForEach(viewModel.photos) { photo in
+                        photoCell(for: photo)
+                            .id(photo.id)
+                    }
                 }
+                .padding(4)
             }
-            .padding(4)
-        }
-        .navigationDestination(for: PhotoItem.self) { photo in
-            LibraryPhotoBrowserView(
-                photos: viewModel.photos,
-                initialPhotoId: photo.id
-            )
+            .onAppear {
+                restoreScrollPosition(using: proxy)
+            }
+            .onChange(of: viewModel.photos.map(\.id)) { _, _ in
+                restoreScrollPosition(using: proxy)
+            }
+            .navigationDestination(for: PhotoItem.self) { photo in
+                LibraryPhotoBrowserView(
+                    photos: viewModel.photos,
+                    initialPhotoId: photo.id,
+                    onCurrentPhotoChanged: { photoID in
+                        lastViewedPhotoID = photoID
+                    }
+                )
+            }
         }
     }
 
@@ -114,6 +127,9 @@ struct AlbumDetailView: View {
             NavigationLink(value: photo) {
                 selectablePhotoGridItem(photo: photo)
             }
+            .simultaneousGesture(TapGesture().onEnded {
+                lastViewedPhotoID = photo.id
+            })
             .contextMenu {
                 if viewModel.canRemoveFromAlbum {
                     Button(role: .destructive) {
@@ -235,5 +251,14 @@ struct AlbumDetailView: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private func restoreScrollPosition(using proxy: ScrollViewProxy) {
+        guard let lastViewedPhotoID else { return }
+
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo(lastViewedPhotoID, anchor: .center)
+        }
     }
 }
