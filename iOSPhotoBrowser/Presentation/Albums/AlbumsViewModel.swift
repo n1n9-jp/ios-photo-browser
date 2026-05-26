@@ -10,6 +10,7 @@ import Combine
 final class AlbumsViewModel: ObservableObject {
     @Published private(set) var albums: [Album] = []
     @Published private(set) var albumImageCounts: [UUID: Int] = [:]
+    @Published private(set) var favoriteAlbumCount = 0
     @Published private(set) var unregisteredAlbumCount = 0
     @Published private(set) var isLoading = false
     @Published var showingCreateSheet = false
@@ -29,15 +30,19 @@ final class AlbumsViewModel: ObservableObject {
     }
 
     var displayedAlbums: [Album] {
-        if unregisteredAlbumCount > 0 {
-            return [Album.unregistered] + albums
+        var displayed: [Album] = []
+        if favoriteAlbumCount > 0 {
+            displayed.append(.favorites)
         }
-        return albums
+        if unregisteredAlbumCount > 0 {
+            displayed.append(.unregistered)
+        }
+        return displayed + albums
     }
 
     var canCreateAlbum: Bool {
         let name = normalizedNewAlbumName
-        return !name.isEmpty && name != Album.unregisteredAlbumName
+        return !name.isEmpty && !Album.reservedNames.contains(name)
     }
 
     func loadAlbums() async {
@@ -54,6 +59,8 @@ final class AlbumsViewModel: ObservableObject {
                 albumImageCounts[album.id] = count
             }
 
+            favoriteAlbumCount = try await imageRepository.fetchFavoriteCount()
+            albumImageCounts[Album.favoritesAlbumId] = favoriteAlbumCount
             unregisteredAlbumCount = try await imageRepository.fetchUnassignedImageCount()
             albumImageCounts[Album.unregisteredAlbumId] = unregisteredAlbumCount
         } catch {
@@ -118,7 +125,7 @@ private enum AlbumValidationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .reservedName:
-            return "「未登録」はシステム用アルバム名のため作成できません"
+            return "「お気に入り」「未登録」はシステム用アルバム名のため作成できません"
         }
     }
 }

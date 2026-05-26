@@ -27,6 +27,16 @@ struct PhotoGridItem: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .cornerRadius(8)
+        .overlay(alignment: .topLeading) {
+            if photo.isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.yellow)
+                    .padding(6)
+                    .background(.black.opacity(0.6), in: Circle())
+                    .padding(6)
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if photo.isGIF {
                 Text("GIF")

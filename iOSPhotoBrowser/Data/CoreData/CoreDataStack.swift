@@ -17,8 +17,12 @@ final class CoreDataStack {
     private init(inMemory: Bool = false) {
         container = NSPersistentContainer(name: "iOSPhotoBrowser")
 
-        if inMemory {
-            container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
+        if let description = container.persistentStoreDescriptions.first {
+            if inMemory {
+                description.url = URL(fileURLWithPath: "/dev/null")
+            }
+            description.shouldMigrateStoreAutomatically = true
+            description.shouldInferMappingModelAutomatically = true
         }
 
         container.loadPersistentStores { description, error in

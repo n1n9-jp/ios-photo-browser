@@ -12,6 +12,7 @@ final class DetailViewModel: ObservableObject {
     @Published private(set) var photo: PhotoItem?
     @Published private(set) var allAlbums: [Album] = []
     @Published private(set) var isLoading = false
+    @Published private(set) var isUpdatingFavorite = false
     @Published private(set) var isGeneratingAITags = false
     @Published var newTagName = ""
     @Published var showingTagEditor = false
@@ -84,6 +85,24 @@ final class DetailViewModel: ObservableObject {
             try await tagRepository.addTag(tag, to: photoId)
             await loadPhoto()
             newTagName = ""
+        } catch {
+            self.error = error
+            showingError = true
+        }
+    }
+
+    func toggleFavorite() async {
+        guard var photo else { return }
+
+        isUpdatingFavorite = true
+        defer { isUpdatingFavorite = false }
+
+        let newValue = !photo.isFavorite
+
+        do {
+            try await imageRepository.setFavorite(newValue, for: photoId)
+            photo.isFavorite = newValue
+            self.photo = photo
         } catch {
             self.error = error
             showingError = true

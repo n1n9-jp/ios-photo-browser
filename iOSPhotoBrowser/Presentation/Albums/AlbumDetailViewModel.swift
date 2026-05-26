@@ -33,7 +33,11 @@ final class AlbumDetailViewModel: ObservableObject {
     }
 
     var canRemoveFromAlbum: Bool {
-        !album.isUnregisteredSmartAlbum
+        !album.isSystemSmartAlbum
+    }
+
+    var canRemoveFavoriteFlag: Bool {
+        album.isFavoriteSmartAlbum
     }
 
     var canBatchAddToAlbum: Bool {
@@ -57,7 +61,9 @@ final class AlbumDetailViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            if album.isUnregisteredSmartAlbum {
+            if album.isFavoriteSmartAlbum {
+                photos = try await imageRepository.fetchFavorites()
+            } else if album.isUnregisteredSmartAlbum {
                 photos = try await imageRepository.fetchUnassignedImages()
             } else {
                 photos = try await imageRepository.fetchImages(inAlbum: album.id)
@@ -138,6 +144,18 @@ final class AlbumDetailViewModel: ObservableObject {
 
         do {
             try await albumRepository.removeImage(photo.id, from: album.id)
+            photos.removeAll { $0.id == photo.id }
+        } catch {
+            self.error = error
+            showingError = true
+        }
+    }
+
+    func removeFavorite(_ photo: PhotoItem) async {
+        guard canRemoveFavoriteFlag else { return }
+
+        do {
+            try await imageRepository.setFavorite(false, for: photo.id)
             photos.removeAll { $0.id == photo.id }
         } catch {
             self.error = error

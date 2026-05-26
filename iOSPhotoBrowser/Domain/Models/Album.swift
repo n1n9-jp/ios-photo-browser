@@ -6,8 +6,11 @@
 import Foundation
 
 struct Album: Identifiable, Hashable {
+    static let favoritesAlbumId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+    static let favoritesAlbumName = "お気に入り"
     static let unregisteredAlbumId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     static let unregisteredAlbumName = "未登録"
+    static let reservedNames: Set<String> = [favoritesAlbumName, unregisteredAlbumName]
 
     let id: UUID
     var name: String
@@ -38,7 +41,24 @@ struct Album: Identifiable, Hashable {
         )
     }
 
+    static var favorites: Album {
+        Album(
+            id: favoritesAlbumId,
+            name: favoritesAlbumName,
+            createdAt: .distantPast,
+            updatedAt: .distantPast
+        )
+    }
+
+    var isFavoriteSmartAlbum: Bool {
+        id == Self.favoritesAlbumId
+    }
+
     var isUnregisteredSmartAlbum: Bool {
         id == Self.unregisteredAlbumId
+    }
+
+    var isSystemSmartAlbum: Bool {
+        isFavoriteSmartAlbum || isUnregisteredSmartAlbum
     }
 }

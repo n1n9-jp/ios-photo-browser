@@ -20,6 +20,7 @@ struct PhotoItem: Identifiable, Hashable {
     let cameraMake: String?
     let cameraModel: String?
     let fileSize: Int64
+    var isFavorite: Bool
     var tags: [Tag]
     var albums: [Album]
     var extractedText: String?
@@ -41,6 +42,7 @@ struct PhotoItem: Identifiable, Hashable {
         cameraMake: String? = nil,
         cameraModel: String? = nil,
         fileSize: Int64 = 0,
+        isFavorite: Bool = false,
         tags: [Tag] = [],
         albums: [Album] = [],
         extractedText: String? = nil,
@@ -61,6 +63,7 @@ struct PhotoItem: Identifiable, Hashable {
         self.cameraMake = cameraMake
         self.cameraModel = cameraModel
         self.fileSize = fileSize
+        self.isFavorite = isFavorite
         self.tags = tags
         self.albums = albums
         self.extractedText = extractedText

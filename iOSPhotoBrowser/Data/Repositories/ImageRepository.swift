@@ -96,6 +96,25 @@ final class ImageRepository: ImageRepositoryProtocol {
         }
     }
 
+    func fetchFavorites() async throws -> [PhotoItem] {
+        try await context.perform {
+            let request = ImageEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "isFavorite == YES")
+            request.sortDescriptors = [NSSortDescriptor(key: "importedAt", ascending: false)]
+
+            let entities = try self.context.fetch(request)
+            return entities.map { self.toPhotoItem($0) }
+        }
+    }
+
+    func fetchFavoriteCount() async throws -> Int {
+        try await context.perform {
+            let request = ImageEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "isFavorite == YES")
+            return try self.context.count(for: request)
+        }
+    }
+
     func fetchUnassignedImages() async throws -> [PhotoItem] {
         try await context.perform {
             let request = ImageEntity.fetchRequest()
@@ -112,6 +131,21 @@ final class ImageRepository: ImageRepositoryProtocol {
             let request = ImageEntity.fetchRequest()
             request.predicate = self.unassignedAlbumsPredicate
             return try self.context.count(for: request)
+        }
+    }
+
+    func setFavorite(_ isFavorite: Bool, for imageId: UUID) async throws {
+        try await context.perform {
+            let request = ImageEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "id == %@", imageId as CVarArg)
+            request.fetchLimit = 1
+
+            guard let entity = try self.context.fetch(request).first else {
+                throw RepositoryError.notFound
+            }
+
+            entity.isFavorite = isFavorite
+            try self.context.save()
         }
     }
 
@@ -210,6 +244,7 @@ final class ImageRepository: ImageRepositoryProtocol {
             cameraMake: entity.cameraMake,
             cameraModel: entity.cameraModel,
             fileSize: entity.fileSize,
+            isFavorite: entity.isFavorite,
             tags: tags,
             albums: albums,
             extractedText: entity.extractedText,
@@ -233,6 +268,7 @@ final class ImageRepository: ImageRepositoryProtocol {
         entity.cameraMake = image.cameraMake
         entity.cameraModel = image.cameraModel
         entity.fileSize = image.fileSize
+        entity.isFavorite = image.isFavorite
     }
 }
 

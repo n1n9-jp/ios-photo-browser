@@ -123,6 +123,14 @@ struct AlbumDetailView: View {
                     } label: {
                         Label("アルバムから削除", systemImage: "minus.circle")
                     }
+                } else if viewModel.canRemoveFavoriteFlag {
+                    Button {
+                        Task {
+                            await viewModel.removeFavorite(photo)
+                        }
+                    } label: {
+                        Label("星を外す", systemImage: "star.slash")
+                    }
                 }
             }
         }

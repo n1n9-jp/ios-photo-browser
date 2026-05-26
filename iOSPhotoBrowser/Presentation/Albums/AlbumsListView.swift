@@ -60,6 +60,15 @@ struct AlbumsListView: View {
 
     private var albumsList: some View {
         List {
+            if viewModel.favoriteAlbumCount > 0 {
+                NavigationLink(value: Album.favorites) {
+                    AlbumRow(
+                        album: Album.favorites,
+                        imageCount: viewModel.favoriteAlbumCount
+                    )
+                }
+            }
+
             if viewModel.unregisteredAlbumCount > 0 {
                 NavigationLink(value: Album.unregistered) {
                     AlbumRow(
@@ -127,13 +136,12 @@ struct AlbumRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Cover image placeholder
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.gray.opacity(0.2))
                 .frame(width: 60, height: 60)
                 .overlay {
-                    Image(systemName: "photo.on.rectangle")
-                        .foregroundColor(.gray)
+                    Image(systemName: coverSystemImageName)
+                        .foregroundColor(coverTintColor)
                 }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -146,5 +154,25 @@ struct AlbumRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var coverSystemImageName: String {
+        if album.isFavoriteSmartAlbum {
+            return "star.fill"
+        }
+        if album.isUnregisteredSmartAlbum {
+            return "tray.full.fill"
+        }
+        return "photo.on.rectangle"
+    }
+
+    private var coverTintColor: Color {
+        if album.isFavoriteSmartAlbum {
+            return .yellow
+        }
+        if album.isUnregisteredSmartAlbum {
+            return .orange
+        }
+        return .gray
     }
 }

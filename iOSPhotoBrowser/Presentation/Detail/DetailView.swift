@@ -33,6 +33,18 @@ struct DetailView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if let photo = viewModel.photo {
+                    Button {
+                        Task {
+                            await viewModel.toggleFavorite()
+                        }
+                    } label: {
+                        Image(systemName: photo.isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(photo.isFavorite ? .yellow : .white)
+                    }
+                    .disabled(viewModel.isUpdatingFavorite)
+                }
+
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         showsMetadataOverlay.toggle()
