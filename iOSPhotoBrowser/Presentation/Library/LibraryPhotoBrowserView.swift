@@ -9,6 +9,7 @@ struct LibraryPhotoBrowserView: View {
     let photos: [PhotoItem]
     let onCurrentPhotoChanged: ((UUID) -> Void)?
     @State private var currentIndex: Int
+    @State private var isCurrentPhotoZoomed = false
 
     init(photos: [PhotoItem], initialPhotoId: UUID, onCurrentPhotoChanged: ((UUID) -> Void)? = nil) {
         self.photos = photos
@@ -19,7 +20,12 @@ struct LibraryPhotoBrowserView: View {
     var body: some View {
         Group {
             if photos.indices.contains(currentIndex) {
-                DetailView(photoId: photos[currentIndex].id)
+                DetailView(
+                    photoId: photos[currentIndex].id,
+                    onZoomStateChanged: { isZoomed in
+                        isCurrentPhotoZoomed = isZoomed
+                    }
+                )
                     .id(photos[currentIndex].id)
                     .simultaneousGesture(photoSwipeGesture)
                     .onAppear {
@@ -44,7 +50,8 @@ struct LibraryPhotoBrowserView: View {
                 let horizontalDistance = value.translation.width
                 let verticalDistance = value.translation.height
 
-                guard abs(horizontalDistance) > abs(verticalDistance),
+                guard !isCurrentPhotoZoomed,
+                      abs(horizontalDistance) > abs(verticalDistance),
                       abs(horizontalDistance) > 60 else {
                     return
                 }
@@ -59,11 +66,13 @@ struct LibraryPhotoBrowserView: View {
 
     private func moveToNextPhoto() {
         guard currentIndex < photos.count - 1 else { return }
+        isCurrentPhotoZoomed = false
         currentIndex += 1
     }
 
     private func moveToPreviousPhoto() {
         guard currentIndex > 0 else { return }
+        isCurrentPhotoZoomed = false
         currentIndex -= 1
     }
 

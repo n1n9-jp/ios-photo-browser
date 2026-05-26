@@ -11,9 +11,11 @@ struct DetailView: View {
     @State private var image: UIImage?
     @State private var imageData: Data?
     @State private var showsMetadataOverlay = false
+    let onZoomStateChanged: ((Bool) -> Void)?
 
-    init(photoId: UUID) {
+    init(photoId: UUID, onZoomStateChanged: ((Bool) -> Void)? = nil) {
         _viewModel = StateObject(wrappedValue: DependencyContainer.shared.makeDetailViewModel(photoId: photoId))
+        self.onZoomStateChanged = onZoomStateChanged
     }
 
     var body: some View {
@@ -120,29 +122,26 @@ struct DetailView: View {
 
     private func mediaSection(photo: PhotoItem, size: CGSize) -> some View {
         ZStack {
-            if let imageData = imageData, GIFSupport.isGIFData(imageData) {
-                AnimatedGIFView(data: imageData)
-                    .aspectRatio(mediaAspectRatio(for: photo), contentMode: .fit)
-                    .frame(width: size.width, height: size.height)
-                    .overlay(alignment: .bottomTrailing) {
+            if let displayImage = mediaDisplayImage {
+                ZoomableImageView(
+                    image: displayImage,
+                    mediaID: photo.id,
+                    onSingleTap: toggleMetadataOverlay,
+                    onZoomStateChanged: { isZoomed in
+                        onZoomStateChanged?(isZoomed)
+                    }
+                )
+                .frame(width: size.width, height: size.height)
+                .overlay(alignment: .bottomTrailing) {
+                    if photo.isGIF {
                         gifBadge
                     }
-            } else if let image = image {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: size.width, height: size.height)
+                }
             } else {
                 placeholderMedia
             }
         }
         .frame(width: size.width, height: size.height)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showsMetadataOverlay.toggle()
-            }
-        }
     }
 
     private var placeholderMedia: some View {
@@ -163,11 +162,17 @@ struct DetailView: View {
             .padding(12)
     }
 
-    private func mediaAspectRatio(for photo: PhotoItem) -> CGFloat {
-        guard photo.width > 0, photo.height > 0 else {
-            return 1
+    private var mediaDisplayImage: UIImage? {
+        if let imageData, GIFSupport.isGIFData(imageData) {
+            return GIFSupport.makeAnimatedImage(from: imageData)
         }
-        return CGFloat(photo.width) / CGFloat(photo.height)
+        return image
+    }
+
+    private func toggleMetadataOverlay() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showsMetadataOverlay.toggle()
+        }
     }
 
     private func metadataOverlay(photo: PhotoItem, safeAreaInsets: EdgeInsets, maxHeight: CGFloat) -> some View {
