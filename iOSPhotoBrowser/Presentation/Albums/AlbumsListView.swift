@@ -133,16 +133,12 @@ struct AlbumsListView: View {
 struct AlbumRow: View {
     let album: Album
     let imageCount: Int
+    @State private var coverImage: UIImage?
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.gray.opacity(0.2))
+            coverThumbnail
                 .frame(width: 60, height: 60)
-                .overlay {
-                    Image(systemName: coverSystemImageName)
-                        .foregroundColor(coverTintColor)
-                }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(album.name)
@@ -154,6 +150,25 @@ struct AlbumRow: View {
             }
         }
         .padding(.vertical, 4)
+        .task(id: album.coverImageId) {
+            await loadCoverImage()
+        }
+    }
+
+    private var coverThumbnail: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Color.gray.opacity(0.2))
+            .overlay {
+                if let coverImage {
+                    Image(uiImage: coverImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: coverSystemImageName)
+                        .foregroundColor(coverTintColor)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private var coverSystemImageName: String {
@@ -174,5 +189,21 @@ struct AlbumRow: View {
             return .orange
         }
         return .gray
+    }
+
+    private func loadCoverImage() async {
+        guard !album.isSystemSmartAlbum,
+              let coverImageId = album.coverImageId,
+              let photo = try? await DependencyContainer.shared.imageRepository.fetch(byId: coverImageId) else {
+            coverImage = nil
+            return
+        }
+
+        if let thumbnailPath = photo.thumbnailPath,
+           let thumbnail = FileStorageManager.shared.loadThumbnail(fileName: thumbnailPath) {
+            coverImage = thumbnail
+        } else {
+            coverImage = FileStorageManager.shared.loadImage(fileName: photo.filePath)
+        }
     }
 }

@@ -128,6 +128,12 @@ final class AlbumRepository: AlbumRepositoryProtocol {
             }
 
             albumEntity.removeFromImages(imageEntity)
+            if albumEntity.coverImageId == imageId {
+                let remainingImages = ((albumEntity.images as? Set<ImageEntity>) ?? [])
+                    .filter { $0 != imageEntity }
+                albumEntity.coverImageId = remainingImages.first?.id
+                albumEntity.updatedAt = Date()
+            }
             try self.context.save()
         }
     }

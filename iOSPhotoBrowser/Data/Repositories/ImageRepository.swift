@@ -69,6 +69,7 @@ final class ImageRepository: ImageRepositoryProtocol {
                 throw RepositoryError.notFound
             }
 
+            self.reassignAlbumCoversIfNeeded(forDeleting: entity)
             self.context.delete(entity)
             try self.context.save()
         }
@@ -269,6 +270,19 @@ final class ImageRepository: ImageRepositoryProtocol {
         entity.cameraModel = image.cameraModel
         entity.fileSize = image.fileSize
         entity.isFavorite = image.isFavorite
+    }
+
+    private func reassignAlbumCoversIfNeeded(forDeleting imageEntity: ImageEntity) {
+        guard let albums = imageEntity.albums as? Set<AlbumEntity> else {
+            return
+        }
+
+        for album in albums where album.coverImageId == imageEntity.id {
+            let remainingImages = ((album.images as? Set<ImageEntity>) ?? [])
+                .filter { $0 != imageEntity }
+            album.coverImageId = remainingImages.first?.id
+            album.updatedAt = Date()
+        }
     }
 }
 

@@ -10,6 +10,7 @@ import Combine
 final class AlbumDetailViewModel: ObservableObject {
     @Published private(set) var photos: [PhotoItem] = []
     @Published private(set) var allAlbums: [Album] = []
+    @Published private(set) var album: Album
     @Published private(set) var isLoading = false
     @Published private(set) var isSelectionMode = false
     @Published private(set) var selectedPhotoIDs: Set<UUID> = []
@@ -18,7 +19,6 @@ final class AlbumDetailViewModel: ObservableObject {
     @Published var error: Error?
     @Published var showingError = false
 
-    let album: Album
     private let albumRepository: AlbumRepositoryProtocol
     private let imageRepository: ImageRepositoryProtocol
 
@@ -44,6 +44,14 @@ final class AlbumDetailViewModel: ObservableObject {
         album.isUnregisteredSmartAlbum
     }
 
+    var canSetCoverImage: Bool {
+        !album.isSystemSmartAlbum
+    }
+
+    var canRenameAlbum: Bool {
+        !album.isSystemSmartAlbum
+    }
+
     var selectedPhotoCount: Int {
         selectedPhotoIDs.count
     }
@@ -61,6 +69,10 @@ final class AlbumDetailViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
+            if canSetCoverImage, let latestAlbum = try await albumRepository.fetch(byId: album.id) {
+                album = latestAlbum
+            }
+
             if album.isFavoriteSmartAlbum {
                 photos = try await imageRepository.fetchFavorites()
             } else if album.isUnregisteredSmartAlbum {
@@ -139,12 +151,70 @@ final class AlbumDetailViewModel: ObservableObject {
         }
     }
 
+    func setCoverImage(_ photo: PhotoItem) async {
+        guard canSetCoverImage else { return }
+
+        var updatedAlbum = album
+        updatedAlbum.coverImageId = photo.id
+        updatedAlbum.updatedAt = Date()
+
+        do {
+            try await albumRepository.update(updatedAlbum)
+            album = updatedAlbum
+        } catch {
+            self.error = error
+            showingError = true
+        }
+    }
+
+    func renameAlbum(to name: String) async -> Bool {
+        guard canRenameAlbum else { return false }
+
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else {
+            error = AlbumRenameValidationError.emptyName
+            showingError = true
+            return false
+        }
+
+        guard !Album.reservedNames.contains(normalizedName) else {
+            error = AlbumRenameValidationError.reservedName
+            showingError = true
+            return false
+        }
+
+        if normalizedName == album.name {
+            return true
+        }
+
+        var updatedAlbum = album
+        updatedAlbum.name = normalizedName
+        updatedAlbum.updatedAt = Date()
+
+        do {
+            try await albumRepository.update(updatedAlbum)
+            album = updatedAlbum
+            return true
+        } catch {
+            self.error = error
+            showingError = true
+            return false
+        }
+    }
+
+    func isCoverImage(_ photo: PhotoItem) -> Bool {
+        album.coverImageId == photo.id
+    }
+
     func removeImage(_ photo: PhotoItem) async {
         guard canRemoveFromAlbum else { return }
 
         do {
             try await albumRepository.removeImage(photo.id, from: album.id)
             photos.removeAll { $0.id == photo.id }
+            if let latestAlbum = try await albumRepository.fetch(byId: album.id) {
+                album = latestAlbum
+            }
         } catch {
             self.error = error
             showingError = true
@@ -160,6 +230,21 @@ final class AlbumDetailViewModel: ObservableObject {
         } catch {
             self.error = error
             showingError = true
+        }
+    }
+}
+
+
+private enum AlbumRenameValidationError: LocalizedError {
+    case emptyName
+    case reservedName
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyName:
+            return "アルバム名を入力してください"
+        case .reservedName:
+            return "「お気に入り」「未登録」はシステム用アルバム名のため使用できません"
         }
     }
 }

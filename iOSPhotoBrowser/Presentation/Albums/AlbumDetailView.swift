@@ -8,6 +8,8 @@ import SwiftUI
 struct AlbumDetailView: View {
     @StateObject private var viewModel: AlbumDetailViewModel
     @State private var lastViewedPhotoID: UUID?
+    @State private var showingRenameSheet = false
+    @State private var editedAlbumName = ""
 
     private let columns = [
         GridItem(.flexible(), spacing: 4),
@@ -54,6 +56,9 @@ struct AlbumDetailView: View {
         }
         .sheet(isPresented: $viewModel.showingAlbumSelector) {
             albumSelectorSheet
+        }
+        .sheet(isPresented: $showingRenameSheet) {
+            renameAlbumSheet
         }
         .safeAreaInset(edge: .bottom) {
             if viewModel.isSelectionMode {
@@ -105,10 +110,23 @@ struct AlbumDetailView: View {
                 }
                 .disabled(viewModel.photos.isEmpty || viewModel.isPerformingBatchAction)
             }
-        } else if viewModel.canBatchAddToAlbum && !viewModel.photos.isEmpty {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("選択") {
-                    viewModel.startSelectionMode()
+        } else {
+            if viewModel.canRenameAlbum {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        editedAlbumName = viewModel.album.name
+                        showingRenameSheet = true
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                }
+            }
+
+            if viewModel.canBatchAddToAlbum && !viewModel.photos.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("選択") {
+                        viewModel.startSelectionMode()
+                    }
                 }
             }
         }
@@ -131,6 +149,16 @@ struct AlbumDetailView: View {
                 lastViewedPhotoID = photo.id
             })
             .contextMenu {
+                if viewModel.canSetCoverImage {
+                    Button {
+                        Task {
+                            await viewModel.setCoverImage(photo)
+                        }
+                    } label: {
+                        Label(viewModel.isCoverImage(photo) ? "表紙に設定済み" : "表紙に設定", systemImage: "photo.fill.on.rectangle.fill")
+                    }
+                }
+
                 if viewModel.canRemoveFromAlbum {
                     Button(role: .destructive) {
                         Task {
@@ -156,6 +184,17 @@ struct AlbumDetailView: View {
         let isSelected = viewModel.isSelected(photo)
 
         return PhotoGridItem(photo: photo)
+            .overlay(alignment: .bottomLeading) {
+                if viewModel.isCoverImage(photo) {
+                    Text("表紙")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.black.opacity(0.7), in: Capsule())
+                        .foregroundColor(.white)
+                        .padding(6)
+                }
+            }
             .overlay {
                 if viewModel.isSelectionMode {
                     RoundedRectangle(cornerRadius: 8)
@@ -205,6 +244,37 @@ struct AlbumDetailView: View {
         .padding(.top, 12)
         .padding(.bottom, 8)
         .background(.ultraThinMaterial)
+    }
+
+    private var renameAlbumSheet: some View {
+        NavigationStack {
+            Form {
+                Section("アルバム名") {
+                    TextField("名前を入力", text: $editedAlbumName)
+                }
+            }
+            .navigationTitle("アルバム名を変更")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("キャンセル") {
+                        showingRenameSheet = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        Task {
+                            let didRename = await viewModel.renameAlbum(to: editedAlbumName)
+                            if didRename {
+                                showingRenameSheet = false
+                            }
+                        }
+                    }
+                    .disabled(editedAlbumName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     private var albumSelectorSheet: some View {
