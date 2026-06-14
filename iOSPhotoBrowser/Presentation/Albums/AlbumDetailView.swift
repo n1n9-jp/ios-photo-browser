@@ -10,12 +10,7 @@ struct AlbumDetailView: View {
     @State private var lastViewedPhotoID: UUID?
     @State private var showingRenameSheet = false
     @State private var editedAlbumName = ""
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4)
-    ]
+    @AppStorage(PhotoGridSizeOption.storageKey) private var photoGridSizeRawValue = PhotoGridSizeOption.medium.rawValue
 
     init(album: Album) {
         _viewModel = StateObject(wrappedValue: DependencyContainer.shared.makeAlbumDetailViewModel(album: album))
@@ -111,6 +106,10 @@ struct AlbumDetailView: View {
                 .disabled(viewModel.photos.isEmpty || viewModel.isPerformingBatchAction)
             }
         } else {
+            ToolbarItem(placement: .topBarTrailing) {
+                PhotoGridSizeMenu()
+            }
+
             if viewModel.canRenameAlbum {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -122,7 +121,7 @@ struct AlbumDetailView: View {
                 }
             }
 
-            if viewModel.canBatchAddToAlbum && !viewModel.photos.isEmpty {
+            if viewModel.canSelectPhotosForAlbumAction && !viewModel.photos.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("選択") {
                         viewModel.startSelectionMode()
@@ -130,6 +129,14 @@ struct AlbumDetailView: View {
                 }
             }
         }
+    }
+
+    private var photoGridSize: PhotoGridSizeOption {
+        PhotoGridSizeOption(rawValue: photoGridSizeRawValue) ?? .medium
+    }
+
+    private var columns: [GridItem] {
+        photoGridSize.columns
     }
 
     @ViewBuilder
@@ -156,6 +163,16 @@ struct AlbumDetailView: View {
                         }
                     } label: {
                         Label(viewModel.isCoverImage(photo) ? "表紙に設定済み" : "表紙に設定", systemImage: "photo.fill.on.rectangle.fill")
+                    }
+                }
+
+                if viewModel.canMovePhotosToAnotherAlbum {
+                    Button {
+                        Task {
+                            await viewModel.movePhotoToAnotherAlbum(photo)
+                        }
+                    } label: {
+                        Label("別のアルバムへ移動", systemImage: "folder.badge.gearshape")
                     }
                 }
 
@@ -234,7 +251,7 @@ struct AlbumDetailView: View {
                     await viewModel.openAlbumSelector()
                 }
             } label: {
-                Label("アルバム追加", systemImage: "rectangle.stack.badge.plus")
+                Label(viewModel.albumActionButtonTitle, systemImage: viewModel.canMovePhotosToAnotherAlbum ? "folder.badge.gearshape" : "rectangle.stack.badge.plus")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -284,11 +301,11 @@ struct AlbumDetailView: View {
                     Text("アルバムがありません")
                         .foregroundColor(.secondary)
                 } else {
-                    Section("追加先のアルバム") {
+                    Section(viewModel.albumSelectorSectionTitle) {
                         ForEach(viewModel.allAlbums) { album in
                             Button {
                                 Task {
-                                    await viewModel.addSelectedPhotos(to: album)
+                                    await viewModel.applySelectedPhotosToAlbum(album)
                                 }
                             } label: {
                                 HStack {
@@ -305,12 +322,12 @@ struct AlbumDetailView: View {
             }
             .overlay {
                 if viewModel.isPerformingBatchAction {
-                    ProgressView("追加中...")
+                    ProgressView(viewModel.albumActionProgressTitle)
                         .padding()
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
             }
-            .navigationTitle("アルバムに追加")
+            .navigationTitle(viewModel.albumSelectorTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

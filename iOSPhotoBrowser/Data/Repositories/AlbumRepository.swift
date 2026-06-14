@@ -16,9 +16,13 @@ final class AlbumRepository: AlbumRepositoryProtocol {
     func fetchAll() async throws -> [Album] {
         try await context.perform {
             let request = AlbumEntity.fetchRequest()
-            request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: false)]
+            request.sortDescriptors = [
+                NSSortDescriptor(key: "sortOrder", ascending: true),
+                NSSortDescriptor(key: "createdAt", ascending: false)
+            ]
 
             let entities = try self.context.fetch(request)
+            try self.normalizeSortOrdersIfNeeded(for: entities)
             return entities.map { self.toAlbum($0) }
         }
     }
@@ -44,6 +48,7 @@ final class AlbumRepository: AlbumRepositoryProtocol {
             entity.createdAt = album.createdAt
             entity.updatedAt = album.updatedAt
             entity.coverImageId = album.coverImageId
+            entity.sortOrder = try self.nextSortOrder()
             try self.context.save()
         }
     }
@@ -138,6 +143,33 @@ final class AlbumRepository: AlbumRepositoryProtocol {
         }
     }
 
+    func updateSortOrders(for albumIds: [UUID]) async throws {
+        try await context.perform {
+            guard !albumIds.isEmpty else { return }
+
+            let request = AlbumEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "id IN %@", albumIds)
+
+            let entities = try self.context.fetch(request)
+            let entitiesById = Dictionary(uniqueKeysWithValues: entities.compactMap { entity in
+                entity.id.map { ($0, entity) }
+            })
+
+            guard entitiesById.count == albumIds.count else {
+                throw RepositoryError.notFound
+            }
+
+            for (index, albumId) in albumIds.enumerated() {
+                guard let entity = entitiesById[albumId] else {
+                    throw RepositoryError.notFound
+                }
+                entity.sortOrder = Int64(index)
+            }
+
+            try self.context.save()
+        }
+    }
+
     func fetchImageCount(for albumId: UUID) async throws -> Int {
         try await context.perform {
             let request = AlbumEntity.fetchRequest()
@@ -160,5 +192,27 @@ final class AlbumRepository: AlbumRepositoryProtocol {
             updatedAt: entity.updatedAt ?? Date(),
             coverImageId: entity.coverImageId
         )
+    }
+
+    private func nextSortOrder() throws -> Int64 {
+        let request = AlbumEntity.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(key: "sortOrder", ascending: false)]
+        request.fetchLimit = 1
+
+        let highestOrder = try context.fetch(request).first?.sortOrder ?? -1
+        return highestOrder + 1
+    }
+
+    private func normalizeSortOrdersIfNeeded(for entities: [AlbumEntity]) throws {
+        var didChange = false
+
+        for (index, entity) in entities.enumerated() where entity.sortOrder != Int64(index) {
+            entity.sortOrder = Int64(index)
+            didChange = true
+        }
+
+        if didChange {
+            try context.save()
+        }
     }
 }

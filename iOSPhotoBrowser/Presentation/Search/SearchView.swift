@@ -8,12 +8,7 @@ import SwiftUI
 struct SearchView: View {
     @StateObject private var viewModel: SearchViewModel
     @State private var lastViewedPhotoID: UUID?
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4)
-    ]
+    @AppStorage(PhotoGridSizeOption.storageKey) private var photoGridSizeRawValue = PhotoGridSizeOption.medium.rawValue
 
     init() {
         _viewModel = StateObject(wrappedValue: DependencyContainer.shared.makeSearchViewModel())
@@ -37,6 +32,13 @@ struct SearchView: View {
                 }
             }
             .navigationTitle("検索")
+            .toolbar {
+                if !viewModel.searchResults.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        PhotoGridSizeMenu()
+                    }
+                }
+            }
             .searchable(text: $viewModel.searchText, prompt: "タグで検索")
             .onSubmit(of: .search) {
                 Task {
@@ -54,6 +56,14 @@ struct SearchView: View {
                 Text(viewModel.error?.localizedDescription ?? "不明なエラー")
             }
         }
+    }
+
+    private var photoGridSize: PhotoGridSizeOption {
+        PhotoGridSizeOption(rawValue: photoGridSizeRawValue) ?? .medium
+    }
+
+    private var columns: [GridItem] {
+        photoGridSize.columns
     }
 
     private var searchPromptView: some View {

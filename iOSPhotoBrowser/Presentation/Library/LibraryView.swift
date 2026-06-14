@@ -10,12 +10,7 @@ struct LibraryView: View {
     @State private var showingImportSheet = false
     @State private var showingSettings = false
     @State private var lastViewedPhotoID: UUID?
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4)
-    ]
+    @AppStorage(PhotoGridSizeOption.storageKey) private var photoGridSizeRawValue = PhotoGridSizeOption.medium.rawValue
 
     init() {
         _viewModel = StateObject(wrappedValue: DependencyContainer.shared.makeLibraryViewModel())
@@ -63,6 +58,7 @@ struct LibraryView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         HStack(spacing: 16) {
                             sortMenu
+                            PhotoGridSizeMenu()
                             Button("選択") {
                                 viewModel.startSelectionMode()
                             }
@@ -256,6 +252,14 @@ struct LibraryView: View {
         .padding(.top, 12)
         .padding(.bottom, 8)
         .background(.ultraThinMaterial)
+    }
+
+    private var photoGridSize: PhotoGridSizeOption {
+        PhotoGridSizeOption(rawValue: photoGridSizeRawValue) ?? .medium
+    }
+
+    private var columns: [GridItem] {
+        photoGridSize.columns
     }
 
     private var sortMenu: some View {

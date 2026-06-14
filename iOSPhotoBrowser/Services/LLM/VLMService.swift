@@ -8,7 +8,9 @@
 
 import Combine
 import Foundation
+import ImageIO
 import UIKit
+import Vision
 
 /// Vision Language Model サービス
 /// 画像から直接書籍情報を抽出（OCR不要）
@@ -60,7 +62,7 @@ actor VLMService: VLMServiceProtocol {
             nPredict: 512,  // 書籍情報抽出には十分
             nCtx: 4096,
             nThreads: 4,
-            temperature: 0.3,  // 低めの温度で安定した出力
+            temperature: 0.1,  // 分類用途で出力を安定させる
             useGPU: true,
             mmprojUseGPU: true,
             warmup: true
@@ -115,13 +117,17 @@ actor VLMService: VLMServiceProtocol {
 
         print("[VLMService] Starting person photo classification...")
         do {
+            let faceDetection = try? await detectFaces(in: image)
             let response = try await generateResponse(
                 for: image,
                 prompt: makePersonPhotoClassificationPrompt(),
                 using: wrapper
             )
             print("[VLMService] Person photo classification response: \(response.prefix(500))")
-            let classification = parsePersonPhotoClassification(response)
+            let classification = refinePersonPhotoClassification(
+                parsePersonPhotoClassification(response),
+                with: faceDetection
+            )
 
             guard classification.hasValidData else {
                 throw LLMError.classificationFailed("有効な分類結果を取得できませんでした")
@@ -141,6 +147,12 @@ actor VLMService: VLMServiceProtocol {
     }
 
     // MARK: - Private Helpers
+
+    private struct FaceDetectionResult {
+        let faceCount: Int
+        let largestFaceAreaRatio: CGFloat
+        let largestFaceHeightRatio: CGFloat
+    }
 
     private func generateResponse(
         for image: UIImage,
@@ -200,6 +212,44 @@ actor VLMService: VLMServiceProtocol {
         } catch {
             await wrapper.reset()
             throw LLMError.extractionFailed(error.localizedDescription)
+        }
+    }
+
+    private func detectFaces(in image: UIImage) async throws -> FaceDetectionResult {
+        guard let cgImage = image.cgImage else {
+            throw LLMError.extractionFailed("画像データの変換に失敗しました")
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let request = VNDetectFaceRectanglesRequest { request, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                let observations = request.results as? [VNFaceObservation] ?? []
+                let largestFace = observations.max {
+                    ($0.boundingBox.width * $0.boundingBox.height) < ($1.boundingBox.width * $1.boundingBox.height)
+                }
+
+                continuation.resume(returning: FaceDetectionResult(
+                    faceCount: observations.count,
+                    largestFaceAreaRatio: largestFace.map { $0.boundingBox.width * $0.boundingBox.height } ?? 0,
+                    largestFaceHeightRatio: largestFace?.boundingBox.height ?? 0
+                ))
+            }
+
+            let handler = VNImageRequestHandler(
+                cgImage: cgImage,
+                orientation: CGImagePropertyOrientation(image.imageOrientation),
+                options: [:]
+            )
+
+            do {
+                try handler.perform([request])
+            } catch {
+                continuation.resume(throwing: error)
+            }
         }
     }
 
@@ -299,6 +349,49 @@ actor VLMService: VLMServiceProtocol {
             isSelfie: isSelfie,
             isGroupPhoto: isGroupPhoto,
             confidence: parseConfidence(from: json)
+        )
+    }
+
+    private func refinePersonPhotoClassification(
+        _ classification: PersonPhotoClassification,
+        with faceDetection: FaceDetectionResult?
+    ) -> PersonPhotoClassification {
+        guard let faceDetection, faceDetection.faceCount > 0 else {
+            return classification
+        }
+        guard classification.hasValidData ||
+              faceDetection.largestFaceAreaRatio >= 0.01 ||
+              faceDetection.largestFaceHeightRatio >= 0.12 else {
+            return classification
+        }
+
+        let peopleCount: PersonPhotoClassification.PeopleCount
+        switch faceDetection.faceCount {
+        case 1:
+            peopleCount = .one
+        case 2:
+            peopleCount = .two
+        default:
+            peopleCount = .threeOrMore
+        }
+
+        let framing: PersonPhotoClassification.Framing?
+        if faceDetection.largestFaceAreaRatio >= 0.18 || faceDetection.largestFaceHeightRatio >= 0.45 {
+            framing = .faceCloseup
+        } else {
+            framing = classification.framing
+        }
+
+        let faceConfidence = min(0.95, 0.72 + (Double(min(faceDetection.faceCount, 3)) * 0.06))
+        let confidence = max(classification.confidence, faceConfidence)
+
+        return PersonPhotoClassification(
+            peopleCount: peopleCount,
+            framing: framing,
+            scene: classification.scene,
+            isSelfie: classification.isSelfie,
+            isGroupPhoto: faceDetection.faceCount >= 3 ? true : classification.isGroupPhoto,
+            confidence: confidence
         )
     }
 
@@ -514,19 +607,55 @@ private func makePersonPhotoClassificationPrompt() -> String {
 
     出力形式:
     {
-      "tags": ["1人", "上半身", "屋内"],
+      "people_count": "one",
+      "framing": "upper_body",
+      "scene": "indoor",
+      "is_selfie": false,
+      "is_group_photo": false,
       "confidence": 0.0
     }
 
     ルール:
-    - tags には次の候補だけを入れる: 1人, 2人, 3人以上, 顔アップ, 上半身, 全身, 複数構図, 屋内, 屋外, 自撮り, 集合写真
-    - 当てはまらないタグは入れない
-    - 人物が主題でない場合は tags を空配列にする
+    - 人物が主題でない場合は全項目をnullまたはfalseにする
     - 人数は人物が主題として見える人数で判定する
-    - 構図は最も代表的なものを1つ選ぶ
+    - people_count は one, two, three_or_more, null のいずれか
+    - framing は face_closeup, upper_body, full_body, mixed, null のいずれか
+    - scene は indoor, outdoor, null のいずれか
+    - face_closeup は顔が画像の大部分を占める場合だけ
+    - upper_body は頭から胸または腰あたりまでが主に写る場合
+    - full_body は頭から足元まで概ね写る場合
+    - mixed は複数人で構図が人ごとに異なる場合
+    - is_selfie は近距離、自撮り角度、腕の写り込みなど自撮りらしい場合だけtrue
+    - is_group_photo は3人以上が集合して撮影されている場合だけtrue
+    - 迷う場合はタグを増やさず、nullまたはfalseにする
     - JSON以外の説明文、コードブロック前後の文章、補足は禁止
     - confidence は 0.0 から 1.0 の数値
     """
+}
+
+private extension CGImagePropertyOrientation {
+    init(_ uiImageOrientation: UIImage.Orientation) {
+        switch uiImageOrientation {
+        case .up:
+            self = .up
+        case .upMirrored:
+            self = .upMirrored
+        case .down:
+            self = .down
+        case .downMirrored:
+            self = .downMirrored
+        case .left:
+            self = .left
+        case .leftMirrored:
+            self = .leftMirrored
+        case .right:
+            self = .right
+        case .rightMirrored:
+            self = .rightMirrored
+        @unknown default:
+            self = .up
+        }
+    }
 }
 
 // MARK: - VLM Model Manager

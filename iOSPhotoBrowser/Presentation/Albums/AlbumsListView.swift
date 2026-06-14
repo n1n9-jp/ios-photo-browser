@@ -7,6 +7,7 @@ import SwiftUI
 
 struct AlbumsListView: View {
     @StateObject private var viewModel: AlbumsViewModel
+    @State private var editMode: EditMode = .inactive
 
     init() {
         _viewModel = StateObject(wrappedValue: DependencyContainer.shared.makeAlbumsViewModel())
@@ -31,11 +32,23 @@ struct AlbumsListView: View {
             }
             .navigationTitle("アルバム")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        viewModel.showingCreateSheet = true
-                    } label: {
-                        Image(systemName: "plus")
+                if !viewModel.albums.isEmpty {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(isReordering ? "完了" : "並び替え") {
+                            withAnimation {
+                                editMode = isReordering ? .inactive : .active
+                            }
+                        }
+                    }
+                }
+
+                if !isReordering {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            viewModel.showingCreateSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
                     }
                 }
             }
@@ -55,48 +68,59 @@ struct AlbumsListView: View {
             } message: {
                 Text(viewModel.error?.localizedDescription ?? "不明なエラー")
             }
+            .environment(\.editMode, $editMode)
         }
+    }
+
+    private var isReordering: Bool {
+        editMode.isEditing
     }
 
     private var albumsList: some View {
         List {
             if viewModel.favoriteAlbumCount > 0 {
-                NavigationLink(value: Album.favorites) {
-                    AlbumRow(
-                        album: Album.favorites,
-                        imageCount: viewModel.favoriteAlbumCount
-                    )
-                }
+                albumRow(for: .favorites, imageCount: viewModel.favoriteAlbumCount)
             }
 
             if viewModel.unregisteredAlbumCount > 0 {
-                NavigationLink(value: Album.unregistered) {
-                    AlbumRow(
-                        album: Album.unregistered,
-                        imageCount: viewModel.unregisteredAlbumCount
-                    )
-                }
+                albumRow(for: .unregistered, imageCount: viewModel.unregisteredAlbumCount)
             }
 
-            ForEach(viewModel.albums) { album in
-                NavigationLink(value: album) {
+            if isReordering {
+                ForEach(viewModel.albums) { album in
                     AlbumRow(
                         album: album,
                         imageCount: viewModel.albumImageCounts[album.id] ?? 0
                     )
                 }
-            }
-            .onDelete { indexSet in
-                for index in indexSet {
-                    let album = viewModel.albums[index]
-                    Task {
-                        await viewModel.deleteAlbum(album)
+                .onMove(perform: viewModel.moveAlbums)
+            } else {
+                ForEach(viewModel.albums) { album in
+                    albumRow(for: album, imageCount: viewModel.albumImageCounts[album.id] ?? 0)
+                }
+                .onDelete { indexSet in
+                    for index in indexSet {
+                        let album = viewModel.albums[index]
+                        Task {
+                            await viewModel.deleteAlbum(album)
+                        }
                     }
                 }
             }
         }
         .navigationDestination(for: Album.self) { album in
             AlbumDetailView(album: album)
+        }
+    }
+
+    @ViewBuilder
+    private func albumRow(for album: Album, imageCount: Int) -> some View {
+        if isReordering {
+            AlbumRow(album: album, imageCount: imageCount)
+        } else {
+            NavigationLink(value: album) {
+                AlbumRow(album: album, imageCount: imageCount)
+            }
         }
     }
 

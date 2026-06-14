@@ -5,6 +5,7 @@
 
 import Foundation
 import Combine
+import SwiftUI
 
 @MainActor
 final class AlbumsViewModel: ObservableObject {
@@ -97,6 +98,22 @@ final class AlbumsViewModel: ObservableObject {
         } catch {
             self.error = error
             showingError = true
+        }
+    }
+
+    func moveAlbums(fromOffsets source: IndexSet, toOffset destination: Int) {
+        let previousAlbums = albums
+        albums.move(fromOffsets: source, toOffset: destination)
+        let orderedAlbumIds = albums.map(\.id)
+
+        Task {
+            do {
+                try await albumRepository.updateSortOrders(for: orderedAlbumIds)
+            } catch {
+                albums = previousAlbums
+                self.error = error
+                showingError = true
+            }
         }
     }
 

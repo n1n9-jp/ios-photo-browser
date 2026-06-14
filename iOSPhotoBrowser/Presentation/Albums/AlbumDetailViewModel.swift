@@ -44,6 +44,14 @@ final class AlbumDetailViewModel: ObservableObject {
         album.isUnregisteredSmartAlbum
     }
 
+    var canMovePhotosToAnotherAlbum: Bool {
+        !album.isSystemSmartAlbum
+    }
+
+    var canSelectPhotosForAlbumAction: Bool {
+        album.isUnregisteredSmartAlbum || canMovePhotosToAnotherAlbum
+    }
+
     var canSetCoverImage: Bool {
         !album.isSystemSmartAlbum
     }
@@ -62,6 +70,22 @@ final class AlbumDetailViewModel: ObservableObject {
 
     var areAllPhotosSelected: Bool {
         !photos.isEmpty && selectedPhotoIDs.count == photos.count
+    }
+
+    var albumSelectorTitle: String {
+        canMovePhotosToAnotherAlbum ? "アルバムへ移動" : "アルバムに追加"
+    }
+
+    var albumSelectorSectionTitle: String {
+        canMovePhotosToAnotherAlbum ? "移動先のアルバム" : "追加先のアルバム"
+    }
+
+    var albumActionButtonTitle: String {
+        canMovePhotosToAnotherAlbum ? "アルバム移動" : "アルバム追加"
+    }
+
+    var albumActionProgressTitle: String {
+        canMovePhotosToAnotherAlbum ? "移動中..." : "追加中..."
     }
 
     func loadPhotos() async {
@@ -91,7 +115,7 @@ final class AlbumDetailViewModel: ObservableObject {
     }
 
     func startSelectionMode() {
-        guard canBatchAddToAlbum else { return }
+        guard canSelectPhotosForAlbumAction else { return }
         isSelectionMode = true
     }
 
@@ -120,11 +144,20 @@ final class AlbumDetailViewModel: ObservableObject {
         }
     }
 
-    func openAlbumSelector() async {
+    func openAlbumSelector(preselectedPhotoIDs: Set<UUID>? = nil) async {
+        if let preselectedPhotoIDs {
+            selectedPhotoIDs = preselectedPhotoIDs
+        }
+
         guard hasSelection else { return }
 
         do {
-            allAlbums = try await albumRepository.fetchAll()
+            let albums = try await albumRepository.fetchAll()
+            if canMovePhotosToAnotherAlbum {
+                allAlbums = albums.filter { $0.id != album.id }
+            } else {
+                allAlbums = albums
+            }
             showingAlbumSelector = true
         } catch {
             self.error = error
@@ -132,7 +165,7 @@ final class AlbumDetailViewModel: ObservableObject {
         }
     }
 
-    func addSelectedPhotos(to destinationAlbum: Album) async {
+    func applySelectedPhotosToAlbum(_ destinationAlbum: Album) async {
         guard hasSelection else { return }
 
         isPerformingBatchAction = true
@@ -141,6 +174,9 @@ final class AlbumDetailViewModel: ObservableObject {
         do {
             for photoId in selectedPhotoIDs {
                 try await albumRepository.addImage(photoId, to: destinationAlbum.id)
+                if canMovePhotosToAnotherAlbum {
+                    try await albumRepository.removeImage(photoId, from: album.id)
+                }
             }
             showingAlbumSelector = false
             cancelSelection()
@@ -149,6 +185,11 @@ final class AlbumDetailViewModel: ObservableObject {
             self.error = error
             showingError = true
         }
+    }
+
+    func movePhotoToAnotherAlbum(_ photo: PhotoItem) async {
+        guard canMovePhotosToAnotherAlbum else { return }
+        await openAlbumSelector(preselectedPhotoIDs: Set([photo.id]))
     }
 
     func setCoverImage(_ photo: PhotoItem) async {

@@ -13,5 +13,6 @@ protocol AlbumRepositoryProtocol {
     func delete(_ album: Album) async throws
     func addImage(_ imageId: UUID, to albumId: UUID) async throws
     func removeImage(_ imageId: UUID, from albumId: UUID) async throws
+    func updateSortOrders(for albumIds: [UUID]) async throws
     func fetchImageCount(for albumId: UUID) async throws -> Int
 }

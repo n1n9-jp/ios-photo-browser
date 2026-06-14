@@ -77,12 +77,7 @@ struct TagImagesView: View {
     @State private var photos: [PhotoItem] = []
     @State private var isLoading = false
     @State private var lastViewedPhotoID: UUID?
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4),
-        GridItem(.flexible(), spacing: 4)
-    ]
+    @AppStorage(PhotoGridSizeOption.storageKey) private var photoGridSizeRawValue = PhotoGridSizeOption.medium.rawValue
 
     var body: some View {
         Group {
@@ -129,9 +124,24 @@ struct TagImagesView: View {
             }
         }
         .navigationTitle(tag.name)
+        .toolbar {
+            if !photos.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    PhotoGridSizeMenu()
+                }
+            }
+        }
         .task {
             await loadPhotos()
         }
+    }
+
+    private var photoGridSize: PhotoGridSizeOption {
+        PhotoGridSizeOption(rawValue: photoGridSizeRawValue) ?? .medium
+    }
+
+    private var columns: [GridItem] {
+        photoGridSize.columns
     }
 
     private func loadPhotos() async {
